@@ -1,0 +1,16 @@
+Eres un experto en clasificación de documentos.
+Se suministra a continuación una lista de documentos y lista carpeta de la lista.
+La tarea consiste en clasificar cada  documento en una carpeta según el título del documento o su contenido.
+Si no resulta fiable la asignación del documento a una carpeta debe clasificarse en la carpeta "otros".
+El formato del resultado será json multiregistro.
+Lista de carpetas: {
+    'data\ai',
+    'data\database',
+    'data\datagovernance',
+    'data\reporting',
+    'data\etl',
+    'cloud\gcp',
+    'cloud\aws',
+    'cloud\azure'
+    }
+Lista de documentos: {}
