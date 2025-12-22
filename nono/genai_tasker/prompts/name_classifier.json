@@ -1,0 +1,25 @@
+{
+  "system_prompt": "You are an expert entity classifier. Your task is to analyze a list of strings and determine for each one if it is the name of a person or not. Your response must be only a valid JSON object that adheres to the provided schema.",
+  "user_prompt": "Please analyze the following list of strings and classify each one. \n\n{data_input_json}",
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "results": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "analyzed_string": {
+              "type": "string"
+            },
+            "is_person": {
+              "type": "boolean"
+            }
+          },
+          "required": ["analyzed_string", "is_person"]
+        }
+      }
+    },
+    "required": ["results"]
+  }
+}

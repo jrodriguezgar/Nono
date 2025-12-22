@@ -1,0 +1,3 @@
+Application Requerimients: Natural Oratory for Neural Operations (también denominado NONO)
+
+It is an IA fisrt project.

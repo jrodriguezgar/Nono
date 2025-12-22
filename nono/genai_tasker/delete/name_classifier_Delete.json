@@ -1,0 +1,22 @@
+{
+  "system_prompt": "Eres un asistente experto en reconocimiento de entidades. Tu tarea es analizar una lista de cadenas de texto y determinar con precisión si cada una corresponde al nombre completo de una persona. Considera que los nombres de empresas, lugares, objetos o conceptos no son nombres de personas.",
+  "user_prompt": "Por favor, analiza la siguiente lista de cadenas de texto y clasifica cada una. Indica si es un nombre de persona y proporciona un breve razonamiento para tu decisión.\n\nLista a analizar:\n{names_json_string}",
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "results": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "analyzed_string": {"type": "string"},
+            "is_person": {"type": "boolean"},
+            "reasoning": {"type": "string"}
+          },
+          "required": ["analyzed_string", "is_person", "reasoning"]
+        }
+      }
+    },
+    "required": ["results"]
+  }
+}

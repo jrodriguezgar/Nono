@@ -1,0 +1,23 @@
+# FastETL Credentials
+
+[google]
+default_model = "gemini-1.5-flash"
+
+[perplexity]
+default_model = "sonar"
+
+[openai]
+default_model = "gpt-3.5-turbo"
+
+[deepseek]
+default_model = "deepseek-chat"
+
+[grok]
+default_model = "grok-1"
+
+[ollama]
+host = "http://localhost:11434"  # Default Ollama host
+default_model = "llama3"
+
+[rate_limits]
+delay_between_requests = 0.5
