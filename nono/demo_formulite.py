@@ -1,10 +1,10 @@
 try:
-    from genai_tasker.connector import connector_genai
+    from connector import connector_genai
 except ImportError:
-    # If running from nono directly and genai_tasker is not a package in path
+    # If running from nono directly
     import sys
     import os
-    sys.path.append(os.path.join(os.path.dirname(__file__), 'genai_tasker'))
+    sys.path.insert(0, os.path.dirname(__file__))
     from connector import connector_genai
 
 # Ensure FormuLite is installed/loaded

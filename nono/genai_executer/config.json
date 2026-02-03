@@ -1,0 +1,14 @@
+{
+  "genai": {
+    "provider": "gemini",
+    "model": "gemini-3-flash-preview",
+    "temperature": 0.1
+  },
+  "execution": {
+    "mode": "subprocess",
+    "security": "safe",
+    "timeout": 30,
+    "max_retries": 2,
+    "save_executions": true
+  }
+}

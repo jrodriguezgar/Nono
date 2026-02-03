@@ -222,16 +222,21 @@ class BaseAIClient(ABC):
             raise
 
 
-# Import the connector_genai module
+# Import the connector_genai module (shared across subprojects)
 try:
-    from .connector import connector_genai
+    from ..connector import connector_genai
 except ImportError:
-    # Fallback for when running as script depending on path
+    # Fallback for when running as script - add parent dir to path
+    import sys
+    import os
+    _nono_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if _nono_dir not in sys.path:
+        sys.path.insert(0, _nono_dir)
     try:
         from connector import connector_genai
     except ImportError:
-         # Try absolute path for safety if run from root
-         from nono.genai_tasker.connector import connector_genai
+        # Try absolute path for safety if run from root
+        from nono.connector import connector_genai
 
 # Lazy load jsonschema
 HAS_JSONSCHEMA = False

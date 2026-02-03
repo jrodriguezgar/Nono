@@ -106,8 +106,8 @@ result = executor.run_json_task(
 | ------------------------------------------------------------------------- | ------------------------------------------------ |
 | [Technical Reference](nono/genai_tasker/README_technical.md)                 | API documentation, classes, and functions        |
 | [Task Configuration Guide](nono/genai_tasker/README_task_configuration.md)   | JSON task definitions, placeholders, and schemas |
-| [SSL Configuration](nono/genai_tasker/connector/connector_genai_ssl.md)      | SSL/TLS setup for corporate environments         |
-| [Connector Reference](nono/genai_tasker/connector/README_connector_genai.md) | Low-level service connector documentation        |
+| [SSL Configuration](nono/connector/connector_genai_ssl.md)                   | SSL/TLS setup for corporate environments         |
+| [Connector Reference](nono/connector/README_connector_genai.md)              | Low-level service connector documentation        |
 
 ## Configuration
 
@@ -160,12 +160,13 @@ See [Task Configuration Guide](nono/genai_tasker/README_task_configuration.md) f
 
 ```
 nono/
+├── connector/                   # Shared AI connectors
+│   └── connector_genai.py       # Provider connectors
 ├── genai_tasker/
 │   ├── genai_tasker.py          # Main module
-│   ├── connector/
-│   │   └── connector_genai.py   # Provider connectors
 │   ├── prompts/                 # Task definition files
 │   └── examples/                # Usage examples
+├── genai_executer/              # Code generation & execution
 ├── apikey.txt                   # API key (gitignored)
 └── config.toml                  # Configuration
 ```

@@ -23,7 +23,7 @@ The GenAI Tasker module provides a comprehensive framework for:
 | File                                                      | Description                                                          |
 | --------------------------------------------------------- | -------------------------------------------------------------------- |
 | [genai_tasker.py](genai_tasker.py)                           | Main module with TaskExecutor, AI clients, and task management logic |
-| [connector/connector_genai.py](connector/connector_genai.py) | Unified connector for multiple AI service providers                  |
+| [../connector/connector_genai.py](../connector/connector_genai.py) | Unified connector for multiple AI service providers (shared)   |
 | [prompts/](prompts/)                                         | Directory for task definition JSON files                             |
 
 ---
