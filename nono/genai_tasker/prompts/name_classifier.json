@@ -1,6 +1,22 @@
 {
-  "system_prompt": "You are an expert entity classifier. Your task is to analyze a list of strings and determine for each one if it is the name of a person or not. Your response must be only a valid JSON object that adheres to the provided schema.",
-  "user_prompt": "Please analyze the following list of strings and classify each one. \n\n{data_input_json}",
+  "task": {
+    "name": "name_classifier",
+    "description": "Analyzes a list of strings to identify person names.",
+    "version": "1.0.0"
+  },
+  "genai": {
+    "provider": "gemini",
+    "model": "gemini-3-flash-preview",
+    "temperature": 0.1
+  },
+  "prompts": {
+    "system": "You are an expert entity classifier. Your task is to analyze a list of strings and determine for each one if it is the name of a person or not. Your response must be only a valid JSON object that adheres to the provided schema.",
+    "user": "Please analyze the following list of strings and classify each one. \n\n{data_input_json}"
+  },
+  "input_schema": {
+    "type": "array",
+    "items": { "type": "string" }
+  },
   "output_schema": {
     "type": "object",
     "properties": {
