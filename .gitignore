@@ -205,3 +205,6 @@ notebooks/
 ToDo/
 
 secrets.toml
+
+# GenAI Executer - execution history
+nono/genai_executer/executions/
