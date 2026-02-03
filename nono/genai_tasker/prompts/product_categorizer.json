@@ -1,0 +1,51 @@
+{
+  "task": {
+    "name": "product_categorizer",
+    "description": "Categorizes products into predefined categories using multiple data inputs",
+    "version": "1.0.0"
+  },
+  "genai": {
+    "provider": "gemini",
+    "model": "gemini-3-flash-preview",
+    "temperature": 0.2
+  },
+  "prompts": {
+    "system": "You are an expert product categorization system. Your task is to classify products into the provided categories. Only use the categories from the list provided. Respond with valid JSON only.",
+    "user": "I have the following list of products to categorize:\n\n{data_input_json}\n\nPlease categorize each product into one of these categories:\n{categories}\n\nAdditional context for classification:\n{context}"
+  },
+  "input_schema": {
+    "type": "array",
+    "items": { "type": "string" }
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "results": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "product": {
+              "type": "string",
+              "description": "The original product name"
+            },
+            "category": {
+              "type": "string",
+              "description": "The assigned category from the provided list"
+            },
+            "confidence": {
+              "type": "number",
+              "description": "Confidence score between 0 and 1"
+            },
+            "reasoning": {
+              "type": "string",
+              "description": "Brief explanation for the categorization"
+            }
+          },
+          "required": ["product", "category", "confidence"]
+        }
+      }
+    },
+    "required": ["results"]
+  }
+}

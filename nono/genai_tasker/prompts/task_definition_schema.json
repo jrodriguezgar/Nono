@@ -1,0 +1,108 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+        "task": {
+            "type": "object",
+            "required": ["name", "version"],
+            "properties": {
+                "name": { "type": "string" },
+                "description": { "type": "string" },
+                "version": { "type": "string" }
+            }
+        },
+        "genai": {
+            "type": "object",
+            "properties": {
+                "provider": { 
+                    "type": "string",
+                    "enum": ["gemini", "openai", "perplexity", "ollama", "deepseek", "grok"],
+                    "description": "The AI provider backend to use."
+                },
+                "model": { 
+                    "type": "string", 
+                    "description": "Specific model identifier (e.g., gemini-1.5-flash, gpt-4o, llama3)."
+                },
+                "response_format": {
+                    "type": "string",
+                    "enum": ["text", "json", "table", "csv", "xml"],
+                    "description": "The expected format of the response."
+                },
+                "temperature": { 
+                    "type": "string",
+                    "enum": ["coding", "math", "data_cleaning", "data_analysis", "conversation", "translation", "creative", "poetry"],
+                    "description": "Presets for temperature based on use case: coding/math (0.0), data_* (1.0), conversation/translation (1.3), creative/poetry (1.5)."
+                },
+                "max_tokens": { 
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Maximum number of tokens to generate." 
+                },
+                "batch_size": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "If input is a list, split into batches of this size to avoid hitting context limits."
+                },
+                "top_p": {
+                    "type": "number",
+                    "minimum": 0.0,
+                    "maximum": 1.0,
+                    "description": "Nucleus sampling probability."
+                },
+                "top_k": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Top-K sampling (Gemini/Ollama)."
+                },
+                "frequency_penalty": {
+                    "type": "number",
+                    "minimum": -2.0,
+                    "maximum": 2.0,
+                    "description": "Penalizes tokens based on their existing frequency in the text (OpenAI/Perplexity/Ollama)."
+                },
+                "presence_penalty": {
+                    "type": "number",
+                    "minimum": -2.0,
+                    "maximum": 2.0,
+                    "description": "Penalizes tokens based on whether they appear in the text so far (OpenAI/Perplexity)."
+                },
+                "stop": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "List of stop sequences."
+                },
+                "candidate_count": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Number of generated responses to return (Gemini)."
+                },
+                "seed": {
+                    "type": "integer",
+                    "description": "Random seed for reproducibility (Ollama)."
+                },
+                "num_ctx": {
+                    "type": "integer",
+                    "description": "Context window size (Ollama)."
+                }
+            }
+        },
+        "prompts": {
+            "type": "object",
+            "required": ["user"],
+            "properties": {
+                "system": { "type": "string" },
+                "user": { "type": "string" },
+                "assistant": { "type": "string", "description": "Optional pre-filled assistant response or context." }
+            }
+        },
+        "input_schema": {
+            "type": "object",
+            "description": "JSON Schema for validating the input data before execution."
+        },
+        "output_schema": {
+            "type": "object",
+            "description": "JSON Schema for the expected structured output."
+        }
+    },
+    "required": ["task", "prompts"]
+}
