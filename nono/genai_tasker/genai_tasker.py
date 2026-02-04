@@ -382,7 +382,7 @@ class TaskExecutor:
                 provider = AIProvider.GEMINI
 
             # Resolve API Key based on provider
-            # env_var_map removed as environment variables support is disabled
+            # Order: 1. Argument, 2. Keyring, 3. Key files
             
             final_api_key = api_key
             
@@ -390,10 +390,13 @@ class TaskExecutor:
             if provider == AIProvider.OLLAMA and not final_api_key:
                  final_api_key = "ollama-local"
 
-            # Fallback: Try to read from a local file if needed (specific to this project structure)
+            # 2. Try keyring (OS credential store)
             if not final_api_key:
-                # Try provider specific key file
-                key_files = [f"{provider.value}_api_key.txt", "google_ai_api_key.txt", "apikey.txt"]
+                final_api_key = self._get_api_key_from_keyring(provider.value)
+
+            # 3. Fallback: Try to read from key files
+            if not final_api_key:
+                key_files = [f"{provider.value}_api_key.txt", "apikey.txt"]
                 
                 search_dirs = []
                 if path:
@@ -410,12 +413,15 @@ class TaskExecutor:
                         if os.path.exists(key_path):
                             with open(key_path, 'r') as kf:
                                 final_api_key = kf.read().strip()
+                            # Migrate to keyring for future use
+                            if final_api_key:
+                                self._set_api_key_to_keyring(provider.value, final_api_key)
                             break
                     if final_api_key:
                         break
 
             if not final_api_key:
-                raise ValueError(f"API Key must be provided via argument or key file.")
+                raise ValueError(f"API Key must be provided via argument, keyring, or key file.")
             
             # Handle temperature preset (string) or float
             temp_val = data.get("temperature", 0.7)
@@ -515,9 +521,53 @@ class TaskExecutor:
 
         return active_client.generate_content(input_data, output_schema, config_overrides)
 
+    def _get_api_key_from_keyring(self, provider_name: str) -> Optional[str]:
+        """
+        Retrieve API key from OS keyring/credential store.
+        
+        Args:
+            provider_name: The provider name (service name in keyring).
+        
+        Returns:
+            API key string, or None if not found or keyring unavailable.
+        """
+        try:
+            if connector_genai.install_library("keyring"):
+                import keyring
+                key = keyring.get_password(provider_name, "api_key")
+                if key:
+                    logger.info(f"API key loaded from keyring for '{provider_name}'")
+                    return key
+        except Exception as e:
+            logger.debug(f"Keyring lookup failed for '{provider_name}': {e}")
+        return None
+
+    def _set_api_key_to_keyring(self, provider_name: str, api_key: str) -> bool:
+        """
+        Store or update API key in OS keyring/credential store.
+        
+        Args:
+            provider_name: The provider name (service name in keyring).
+            api_key: The API key to store.
+        
+        Returns:
+            True if successfully stored, False otherwise.
+        """
+        try:
+            if connector_genai.install_library("keyring"):
+                import keyring
+                keyring.set_password(provider_name, "api_key", api_key)
+                logger.info(f"API key migrated to keyring for '{provider_name}'")
+                return True
+        except Exception as e:
+            logger.debug(f"Failed to store API key in keyring for '{provider_name}': {e}")
+        return False
+
     def _resolve_api_key_for_provider(self, provider: AIProvider) -> str:
         """
         Find API key for a specific provider dynamically.
+        
+        Search order: 1. Keyring, 2. Key files
         
         Args:
             provider: The AI provider to find the key for.
@@ -528,23 +578,28 @@ class TaskExecutor:
         if provider == AIProvider.OLLAMA:
             return "ollama-local"
         
-        # Similar logic to _load_config but simplified for dynamic load
-        # We assume standard paths relative to current file or project root
-        key_files = [f"{provider.value}_api_key.txt", "apikey.txt"]
-        if provider == AIProvider.GEMINI: key_files.append("google_ai_api_key.txt")
+        # 1. Try keyring first
+        key = self._get_api_key_from_keyring(provider.value)
+        if key:
+            return key
         
-        # Search paths: 1. same dir as config (if we knew it), 2. project root (nono/)
-        # We'll assume project root is parent of genai_tasker
-        current_dir = os.path.dirname(os.path.abspath(__file__)) # genai_tasker/
-        project_root = os.path.dirname(current_dir) # nono/
+        # 2. Fallback to key files
+        key_files = [f"{provider.value}_api_key.txt", "apikey.txt"]
+        
+        current_dir = os.path.dirname(os.path.abspath(__file__))  # genai_tasker/
+        project_root = os.path.dirname(current_dir)  # nono/
         
         for kf in key_files:
             p = os.path.join(project_root, kf)
             if os.path.exists(p):
-                with open(p, 'r') as f: return f.read().strip()
+                with open(p, 'r') as f:
+                    key = f.read().strip()
+                # Migrate to keyring for future use
+                if key:
+                    self._set_api_key_to_keyring(provider.value, key)
+                    return key
                 
-        # If not found, maybe check env vars or raise
-        logger.warning(f"Could not find API key file for {provider.value} in {project_root}")
+        logger.warning(f"Could not find API key for {provider.value} in keyring or files")
         return ""
 
     def _merge_batched_results(

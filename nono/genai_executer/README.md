@@ -35,10 +35,31 @@ Allows all operations without restrictions. **Use with caution** - only enable w
 The module uses the same infrastructure as `genai_tasker`. Ensure dependencies are installed:
 
 ```bash
-pip install google-genai openai httpx
+pip install google-genai openai httpx keyring
 ```
 
 ## Configuration
+
+### API Keys
+
+API keys are resolved in this order:
+
+| Priority | Method | Description |
+|----------|--------|-------------|
+| 1st | Argument | `CodeExecuter(api_key="...")` |
+| 2nd | OS Keyring | `keyring.get_password(provider, "api_key")` |
+| 3rd | Key Files | `{provider}_api_key.txt` or `apikey.txt` |
+
+**Recommended: Use OS Keyring (Most Secure)**
+
+```python
+import keyring
+
+# Store API key (one-time setup)
+keyring.set_password("gemini", "api_key", "your-api-key")
+```
+
+> **Auto-Migration**: Keys found in files are automatically saved to keyring for future use.
 
 ### Using config.json (Recommended)
 

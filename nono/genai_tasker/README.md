@@ -113,11 +113,35 @@ result = executor.run_json_task(
 
 ### API Keys
 
-Store your API key in one of these files (searched in order):
+API keys are resolved in this order:
 
-1. `{provider}_api_key.txt` (e.g., `gemini_api_key.txt`)
-2. `google_ai_api_key.txt`
-3. `apikey.txt`
+| Priority | Method | Description |
+|----------|--------|-------------|
+| 1st | Argument | `TaskExecutor(api_key="...")` |
+| 2nd | OS Keyring | `keyring.get_password(provider, "api_key")` |
+| 3rd | Key Files | `{provider}_api_key.txt` or `apikey.txt` |
+
+**Recommended: Use OS Keyring (Most Secure)**
+
+```python
+import keyring
+
+# Store API key (one-time setup)
+keyring.set_password("gemini", "api_key", "your-api-key")
+keyring.set_password("openai", "api_key", "your-openai-key")
+```
+
+> **Auto-Migration**: Keys found in files are automatically saved to keyring for future use.
+
+**Alternative: Key Files**
+
+```bash
+# Provider-specific
+echo "your-key" > nono/gemini_api_key.txt
+
+# Generic fallback
+echo "your-key" > nono/apikey.txt
+```
 
 ### Task Definition Files
 
