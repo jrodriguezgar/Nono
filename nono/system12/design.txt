@@ -1,6 +1,0 @@
-Cerebro: sistema 1 y sistema 2
-
-1 - entra el dato en el sistema
-2 - se chequea si ya se ha procesado un caso igual o similar en la DB (determinista o por probilidades)
-3 - en ese caso positivo se devuelve el resultado y finaliza el flujo
-4 - en caso negativo se pasa por Gen AI y se guarda en DB, se finaliza devolviendo el resultado
