@@ -73,7 +73,7 @@ A task definition file has five main sections:
 | Field               | Type          | Required | Default          | Description                                                                            |
 | ------------------- | ------------- | -------- | ---------------- | -------------------------------------------------------------------------------------- |
 | `provider`        | string        | No       | `gemini`       | AI provider:`gemini`, `openai`, `perplexity`, `ollama`, `deepseek`, `grok` |
-| `model`           | string        | No       | Provider default | Model identifier (e.g.,`gemini-1.5-flash`, `gpt-4o`)                               |
+| `model`           | string        | No       | Provider default | Model identifier (e.g.,`gemini-3-flash-preview`, `gpt-4o`)                               |
 | `temperature`     | string/number | No       | `0.7`          | Preset or float value (see[Temperature Presets](#temperature-presets))                    |
 | `max_tokens`      | integer       | No       | `2048`         | Maximum tokens to generate                                                             |
 | `batch_size`      | integer       | No       | Auto             | Split input lists into batches of this size                                            |
@@ -362,7 +362,7 @@ touch prompts/sentiment_analyzer.json
   },
   "genai": {
     "provider": "gemini",
-    "model": "gemini-1.5-flash",
+    "model": "gemini-3-flash-preview",
     "temperature": "data_analysis"
   },
   "prompts": {
@@ -452,7 +452,7 @@ For large datasets, the executor automatically splits input into batches based o
 {
   "genai": {
     "provider": "gemini",
-    "model": "gemini-1.5-pro-latest",
+    "model": "gemini-3-flash-preview",
     "top_k": 40,
     "candidate_count": 1
   }
@@ -514,7 +514,7 @@ Use the `assistant` field to provide context:
   },
   "genai": {
     "provider": "gemini",
-    "model": "gemini-1.5-flash",
+    "model": "gemini-3-flash-preview",
     "temperature": 0.1
   },
   "prompts": {
@@ -553,7 +553,7 @@ This example demonstrates the use of **multiple placeholders** for richer contex
   },
   "genai": {
     "provider": "gemini",
-    "model": "gemini-1.5-flash",
+    "model": "gemini-3-flash-preview",
     "temperature": 0.2
   },
   "prompts": {
@@ -632,7 +632,7 @@ result = executor.run_json_task(
   },
   "genai": {
     "provider": "gemini",
-    "model": "gemini-1.5-pro-latest",
+    "model": "gemini-3-flash-preview",
     "temperature": "coding",
     "response_format": "json"
   },
@@ -723,7 +723,14 @@ Use `input_schema` to catch invalid data before API calls:
 
 ---
 
-## Credits
+## Contact
 
-**Author:** DatamanEdge  
-**License:** MIT
+- **Author**: [DatamanEdge](https://github.com/DatamanEdge)
+- **Email**: [jrodriguezga@outlook.com](mailto:jrodriguezga@outlook.com)
+- **LinkedIn**: [Javier Rodríguez](https://es.linkedin.com/in/javier-rodriguez-ga)
+
+---
+
+## License
+
+MIT © 2026 DatamanEdge. See [LICENSE](../../LICENSE).

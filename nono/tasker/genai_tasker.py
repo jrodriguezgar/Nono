@@ -80,9 +80,13 @@ def event_log(message: Optional[str] = None, level: int = logging.INFO):
 class AIProvider(Enum):
     """Enumeration of supported AI service providers."""
     
-    GEMINI = "gemini"
+    GOOGLE = "google"
     OPENAI = "openai"
     PERPLEXITY = "perplexity"
+    DEEPSEEK = "deepseek"
+    GROK = "grok"
+    GROQ = "groq"
+    OPENROUTER = "openrouter"
     OLLAMA = "ollama"
 
 
@@ -169,6 +173,14 @@ class BaseAIClient(ABC):
             effective_max_tokens = overrides.get("max_tokens", self.config.max_tokens)
             override_model = overrides.get("model_name")
             
+            # Handle temperature preset (string) or float
+            if isinstance(effective_temperature, str):
+                try:
+                    effective_temperature = connector_genai.GenerativeAIService.get_recommended_temperature(effective_temperature)
+                except Exception:
+                    logger.warning(f"Unknown temperature preset '{effective_temperature}', using default 0.7")
+                    effective_temperature = 0.7
+            
             # Handle model override
             original_model_name = None
             if override_model and self.service and hasattr(self.service, 'model_name') and self.service.model_name != override_model:
@@ -238,6 +250,15 @@ except ImportError:
         # Try absolute path for safety if run from root
         from nono.connector import connector_genai
 
+# Import jinjapromptpy for prompt building (required dependency)
+try:
+    from .jinja_prompt_builder import TaskPromptBuilder, build_prompt, build_prompts
+except ImportError:
+    try:
+        from jinja_prompt_builder import TaskPromptBuilder, build_prompt, build_prompts
+    except ImportError:
+        from nono.tasker.jinja_prompt_builder import TaskPromptBuilder, build_prompt, build_prompts
+
 # Lazy load jsonschema
 HAS_JSONSCHEMA = False
 if connector_genai.install_library("jsonschema"):
@@ -302,6 +323,70 @@ class PerplexityClient(BaseAIClient):
             raise
 
 
+class DeepSeekClient(BaseAIClient):
+    """Client for DeepSeek Models using connector_genai."""
+
+    def __init__(self, config: AIConfiguration):
+        super().__init__(config)
+        
+        try:
+            self.service = connector_genai.DeepSeekService(
+                model_name=self.config.model_name,
+                api_key=self.config.api_key
+            )
+        except Exception as e:
+            logger.critical(f"Failed to initialize DeepSeekService: {e}")
+            raise
+
+
+class GrokClient(BaseAIClient):
+    """Client for Grok (xAI) Models using connector_genai."""
+
+    def __init__(self, config: AIConfiguration):
+        super().__init__(config)
+        
+        try:
+            self.service = connector_genai.GrokService(
+                model_name=self.config.model_name,
+                api_key=self.config.api_key
+            )
+        except Exception as e:
+            logger.critical(f"Failed to initialize GrokService: {e}")
+            raise
+
+
+class GroqClient(BaseAIClient):
+    """Client for Groq LPU inference using connector_genai."""
+
+    def __init__(self, config: AIConfiguration):
+        super().__init__(config)
+        
+        try:
+            self.service = connector_genai.GroqService(
+                model_name=self.config.model_name,
+                api_key=self.config.api_key
+            )
+        except Exception as e:
+            logger.critical(f"Failed to initialize GroqService: {e}")
+            raise
+
+
+class OpenRouterClient(BaseAIClient):
+    """Client for OpenRouter unified API using connector_genai."""
+
+    def __init__(self, config: AIConfiguration):
+        super().__init__(config)
+        
+        try:
+            self.service = connector_genai.OpenRouterService(
+                model_name=self.config.model_name,
+                api_key=self.config.api_key
+            )
+        except Exception as e:
+            logger.critical(f"Failed to initialize OpenRouterService: {e}")
+            raise
+
+
 class OllamaClient(BaseAIClient):
     """Client for Ollama Models using connector_genai."""
 
@@ -309,13 +394,12 @@ class OllamaClient(BaseAIClient):
         super().__init__(config)
         
         try:
-             self.service = connector_genai.OllamaService(
-                 model_name=self.config.model_name
-             )
+            self.service = connector_genai.OllamaService(
+                model_name=self.config.model_name
+            )
         except Exception as e:
             logger.critical(f"Failed to initialize OllamaService: {e}")
             raise
-
 
 
 class TaskExecutor:
@@ -325,160 +409,66 @@ class TaskExecutor:
     Follows S.O.L.I.D principles by separating configuration, usage, and implementation.
     Supports task-based execution with JSON configuration files and automatic batching.
     
+    Provider and model are passed as parameters. API key resolution is delegated
+    to connector_genai (keyring -> CSV fallback).
+    
     Attributes:
-        default_task_definition: Loaded task definition from initialization.
         config: AIConfiguration instance for the executor.
-        client: Active AI client based on the configured provider.
+        service: Active AI service based on the configured provider.
     """
     
     def __init__(
         self,
-        task_or_config_file: Optional[str] = None,
-        api_key: Optional[str] = None
+        provider: str,
+        model: str,
+        api_key: Optional[str] = None,
+        temperature: float | str = 0.7,
+        max_tokens: int = 2048
     ) -> None:
         """
         Initialize the TaskExecutor.
         
         Args:
-            task_or_config_file: Path to task definition or config JSON file.
-            api_key: Optional API key override.
+            provider: AI provider name (google, openai, groq, openrouter, etc.). Required.
+            model: Model name to use. Required.
+            api_key: Optional API key. If None, resolved via connector_genai.
+            temperature: Sampling temperature (float or use case name like "coding").
+            max_tokens: Maximum tokens in response.
         """
-        self.default_task_definition: Optional[Dict[str, Any]] = None
-        self.config = self._load_config(task_or_config_file, api_key)
-        self.client = self._create_client()
-
-    def _load_config(self, path: Optional[str], api_key: Optional[str]) -> AIConfiguration:
-        """Load configuration from file or use defaults."""
-        data: Dict[str, Any] = {}
-        if path:
-            if os.path.exists(path):
-                try:
-                    with open(path, 'r', encoding='utf-8') as f:
-                        loaded_json = json.load(f)
-                        
-                        # Check if it is a Task Definition (has "task" and "genai" sections)
-                        if "task" in loaded_json and "genai" in loaded_json:
-                            self.default_task_definition = loaded_json
-                            # Use the genai section as the base configuration
-                            data = loaded_json["genai"]
-                            logger.info(f"Loaded Task Definition from {path}")
-                        else:
-                            # Treat as standard configuration file
-                            data = loaded_json
-                except json.JSONDecodeError:
-                    logger.error(f"Invalid JSON in configuration file: {path}")
-                    raise
-            else:
-                logger.warning(f"Configuration file not found: {path}. Using defaults.")
+        # Resolve temperature if string
+        if isinstance(temperature, str):
+            final_temperature = connector_genai.GenerativeAIService.get_recommended_temperature(temperature)
+        else:
+            final_temperature = float(temperature)
         
+        # Normalize provider name (gemini -> google alias)
+        provider_name = provider.lower()
+        
+        # Resolve provider enum
         try:
-            # Determine provider (default to Gemini if not set)
-            # Support both 'provider' (std) and 'ai_service' (legacy)
-            provider_str = data.get("provider", data.get("ai_service", "gemini")).lower()
-            try:
-                provider = AIProvider(provider_str)
-            except ValueError:
-                logger.warning(f"Unknown provider '{provider_str}', defaulting to GEMINI")
-                provider = AIProvider.GEMINI
-
-            # Resolve API Key based on provider
-            # Order: 1. Argument, 2. Keyring, 3. Key files
-            
-            final_api_key = api_key
-            
-            # Ollama does not strictly require an API key if running locally
-            if provider == AIProvider.OLLAMA and not final_api_key:
-                 final_api_key = "ollama-local"
-
-            # 2. Try keyring (OS credential store)
-            if not final_api_key:
-                final_api_key = self._get_api_key_from_keyring(provider.value)
-
-            # 3. Fallback: Try to read from key files
-            if not final_api_key:
-                key_files = [f"{provider.value}_api_key.txt", "apikey.txt"]
-                
-                search_dirs = []
-                if path:
-                     search_dirs.append(os.path.dirname(os.path.dirname(path)))
-                
-                # Always check relative to module location
-                current_module_dir = os.path.dirname(os.path.abspath(__file__))
-                project_root = os.path.dirname(current_module_dir)
-                search_dirs.append(project_root)
-
-                for search_dir in search_dirs:
-                    for kf_name in key_files:
-                        key_path = os.path.join(search_dir, kf_name)
-                        if os.path.exists(key_path):
-                            with open(key_path, 'r') as kf:
-                                final_api_key = kf.read().strip()
-                            # Migrate to keyring for future use
-                            if final_api_key:
-                                self._set_api_key_to_keyring(provider.value, final_api_key)
-                            break
-                    if final_api_key:
-                        break
-
-            if not final_api_key:
-                raise ValueError(f"API Key must be provided via argument, keyring, or key file.")
-            
-            # Handle temperature preset (string) or float
-            temp_val = data.get("temperature", 0.7)
-            final_temperature = 0.7
-            if isinstance(temp_val, str):
-                try:
-                     final_temperature = connector_genai.GenerativeAIService.get_recommended_temperature(temp_val)
-                except Exception:
-                     logger.warning(f"Unknown temperature preset '{temp_val}', using default 0.7")
-            else:
-                 final_temperature = float(temp_val)
-
-            # Resolve Model Name: Support 'model' (std) and 'model_name' (legacy)
-            model_val = data.get("model", data.get("model_name", "gemini-1.5-flash"))
-
-            # Resolve Max Tokens: Support 'max_tokens' (std) and 'max_prompt_length' (legacy)
-            max_tokens_val = data.get("max_tokens", data.get("max_prompt_length", 2048))
-
-            return AIConfiguration(
-                provider=provider,
-                model_name=model_val,
-                api_key=final_api_key,
-                temperature=final_temperature,
-                max_tokens=max_tokens_val,
-                system_instruction=data.get("system_instruction", None)
-            )
-        except Exception as e:
-             logger.error(f"Error loading configuration: {e}")
-             raise
-
-    def _create_client(self, config: Optional[AIConfiguration] = None) -> BaseAIClient:
-        """
-        Factory method to instantiate the correct client based on provider.
+            provider_enum = AIProvider(provider_name)
+        except ValueError:
+            logger.warning(f"Unknown provider '{provider}', defaulting to GOOGLE")
+            provider_enum = AIProvider.GOOGLE
         
-        Args:
-            config: Optional configuration override. Uses self.config if None.
+        # Resolve API key via connector_genai if not provided
+        final_api_key = api_key or connector_genai.resolve_api_key_for_provider(provider_enum.value)
         
-        Returns:
-            Appropriate AI client instance for the provider.
+        self.config = AIConfiguration(
+            provider=provider_enum,
+            model_name=model,
+            api_key=final_api_key,
+            temperature=final_temperature,
+            max_tokens=max_tokens
+        )
         
-        Raises:
-            ValueError: If the provider is not supported.
-        """
-        cfg = config if config else self.config
-        
-        client_map = {
-            AIProvider.GEMINI: GeminiClient,
-            AIProvider.OPENAI: OpenAIClient,
-            AIProvider.PERPLEXITY: PerplexityClient,
-            AIProvider.OLLAMA: OllamaClient,
-        }
-        
-        client_class = client_map.get(cfg.provider)
-        if client_class is None:
-            raise ValueError(f"Unsupported provider: {cfg.provider}")
-        
-        return client_class(cfg)
+        # Create the AI service directly via connector_genai
+        self.service = connector_genai.get_service_for_provider(
+            provider=self.config.provider.value,
+            model=self.config.model_name,
+            apikey=self.config.api_key
+        )
+        logger.info(f"TaskExecutor initialized: {self.config.provider.value}/{self.config.model_name}")
 
     @event_log(message="Task Execution")
     def execute(
@@ -502,105 +492,101 @@ class TaskExecutor:
             logger.warning("Empty input data provided.")
             return ""
         
-        # Check if we need to switch temporary client due to provider change
-        active_client = self.client
+        # Determine which service to use
+        active_service = self.service
+        
+        # Check if we need to switch provider for this call
         if config_overrides and "provider" in config_overrides:
-             if config_overrides["provider"] != self.config.provider:
-                 logger.info(f"Switching provider for this task: {self.config.provider.value} -> {config_overrides['provider'].value}")
-                 
-                 # Create temporary config for provider switch
-                 temp_config = AIConfiguration(
-                     provider=config_overrides["provider"],
-                     model_name=config_overrides.get("model_name", "default"),
-                     api_key=config_overrides.get("api_key", ""),
-                     temperature=config_overrides.get("temperature", self.config.temperature),
-                     max_tokens=config_overrides.get("max_tokens", self.config.max_tokens),
-                     system_instruction=self.config.system_instruction
-                 )
-                 active_client = self._create_client(temp_config)
-
-        return active_client.generate_content(input_data, output_schema, config_overrides)
-
-    def _get_api_key_from_keyring(self, provider_name: str) -> Optional[str]:
-        """
-        Retrieve API key from OS keyring/credential store.
-        
-        Args:
-            provider_name: The provider name (service name in keyring).
-        
-        Returns:
-            API key string, or None if not found or keyring unavailable.
-        """
-        try:
-            if connector_genai.install_library("keyring"):
-                import keyring
-                key = keyring.get_password(provider_name, "api_key")
-                if key:
-                    logger.info(f"API key loaded from keyring for '{provider_name}'")
-                    return key
-        except Exception as e:
-            logger.debug(f"Keyring lookup failed for '{provider_name}': {e}")
-        return None
-
-    def _set_api_key_to_keyring(self, provider_name: str, api_key: str) -> bool:
-        """
-        Store or update API key in OS keyring/credential store.
-        
-        Args:
-            provider_name: The provider name (service name in keyring).
-            api_key: The API key to store.
-        
-        Returns:
-            True if successfully stored, False otherwise.
-        """
-        try:
-            if connector_genai.install_library("keyring"):
-                import keyring
-                keyring.set_password(provider_name, "api_key", api_key)
-                logger.info(f"API key migrated to keyring for '{provider_name}'")
-                return True
-        except Exception as e:
-            logger.debug(f"Failed to store API key in keyring for '{provider_name}': {e}")
-        return False
-
-    def _resolve_api_key_for_provider(self, provider: AIProvider) -> str:
-        """
-        Find API key for a specific provider dynamically.
-        
-        Search order: 1. Keyring, 2. Key files
-        
-        Args:
-            provider: The AI provider to find the key for.
-        
-        Returns:
-            API key string, or empty string if not found.
-        """
-        if provider == AIProvider.OLLAMA:
-            return "ollama-local"
-        
-        # 1. Try keyring first
-        key = self._get_api_key_from_keyring(provider.value)
-        if key:
-            return key
-        
-        # 2. Fallback to key files
-        key_files = [f"{provider.value}_api_key.txt", "apikey.txt"]
-        
-        current_dir = os.path.dirname(os.path.abspath(__file__))  # genai_tasker/
-        project_root = os.path.dirname(current_dir)  # nono/
-        
-        for kf in key_files:
-            p = os.path.join(project_root, kf)
-            if os.path.exists(p):
-                with open(p, 'r') as f:
-                    key = f.read().strip()
-                # Migrate to keyring for future use
-                if key:
-                    self._set_api_key_to_keyring(provider.value, key)
-                    return key
+            new_provider = config_overrides["provider"]
+            if isinstance(new_provider, AIProvider):
+                new_provider = new_provider.value
+            
+            if new_provider != self.config.provider.value:
+                logger.info(f"Switching provider for this task: {self.config.provider.value} -> {new_provider}")
                 
-        logger.warning(f"Could not find API key for {provider.value} in keyring or files")
-        return ""
+                # Resolve API key for the new provider
+                api_key = config_overrides.get("api_key")
+                if not api_key:
+                    api_key = connector_genai.resolve_api_key_for_provider(new_provider)
+                
+                model_name = config_overrides.get("model_name", config_overrides.get("model", "default"))
+                
+                # Create temporary service via connector_genai
+                active_service = connector_genai.get_service_for_provider(
+                    provider=new_provider,
+                    model=model_name,
+                    apikey=api_key
+                )
+        
+        # Generate content using the service
+        return self._generate_content(active_service, input_data, output_schema, config_overrides)
+    
+    def _generate_content(
+        self,
+        service: connector_genai.GenerativeAIService,
+        input_data: Union[str, List[Dict[str, Any]]],
+        json_schema: Optional[Dict[str, Any]] = None,
+        config_overrides: Optional[Dict[str, Any]] = None
+    ) -> str:
+        """
+        Generate content using the provided service.
+        
+        Args:
+            service: The AI service to use for generation.
+            input_data: String prompt or list of message dictionaries.
+            json_schema: Optional JSON schema for structured output.
+            config_overrides: Optional runtime configuration overrides.
+        
+        Returns:
+            Generated content as a string.
+        """
+        # Normalize input to messages list
+        if isinstance(input_data, str):
+            messages = [{"role": "user", "content": input_data}]
+        elif isinstance(input_data, list):
+            messages = [msg.copy() for msg in input_data]
+        else:
+            raise ValueError("Input data must be a string or a list of message dictionaries.")
+        
+        overrides = config_overrides or {}
+        
+        # Determine effective temperature
+        effective_temperature = overrides.get("temperature", self.config.temperature)
+        if isinstance(effective_temperature, str):
+            effective_temperature = connector_genai.GenerativeAIService.get_recommended_temperature(effective_temperature)
+        
+        # Determine effective max_tokens
+        effective_max_tokens = overrides.get("max_tokens", self.config.max_tokens)
+        
+        # Determine response format
+        resp_fmt = connector_genai.ResponseFormat.JSON if json_schema else connector_genai.ResponseFormat.TEXT
+        if "response_format" in overrides:
+            try:
+                fmt_str = overrides["response_format"].lower()
+                resp_fmt = connector_genai.ResponseFormat(fmt_str)
+            except ValueError:
+                logger.warning(f"Invalid response_format '{overrides['response_format']}', using default.")
+        
+        # Prepare extra kwargs (remove keys handled explicitly)
+        call_kwargs = {k: v for k, v in overrides.items() 
+                       if k not in ["temperature", "max_tokens", "model_name", "model", 
+                                    "provider", "api_key", "response_format"]}
+        
+        logger.info(f"Sending request to {service.provider} ({service.model_name})...")
+        
+        try:
+            response_text = service.generate_completion(
+                messages=messages,
+                temperature=effective_temperature,
+                max_tokens=effective_max_tokens,
+                response_format=resp_fmt,
+                json_schema=json_schema,
+                **call_kwargs
+            )
+            return response_text
+        except Exception as e:
+            logger.error(f"{service.provider} API Error: {e}")
+            raise
 
     def _merge_batched_results(
         self,
@@ -734,25 +720,25 @@ class TaskExecutor:
             The service class, or None if not found.
         """
         service_map = {
-            AIProvider.GEMINI: connector_genai.GeminiService,
+            AIProvider.GOOGLE: connector_genai.GeminiService,
             AIProvider.OPENAI: connector_genai.OpenAIService,
             AIProvider.PERPLEXITY: connector_genai.PerplexityService,
+            AIProvider.DEEPSEEK: connector_genai.DeepSeekService,
+            AIProvider.GROK: connector_genai.GrokService,
+            AIProvider.GROQ: connector_genai.GroqService,
+            AIProvider.OPENROUTER: connector_genai.OpenRouterService,
             AIProvider.OLLAMA: connector_genai.OllamaService,
         }
         return service_map.get(provider)
 
     def run_json_task(
         self,
-        task_source: Union[str, Any],
+        task_file: str,
         data_input: Optional[Any] = None,
         **data_inputs: Any
     ) -> str:
         """
         Execute a task defined in a JSON file with automatic batching support.
-        
-        Supports two usage patterns:
-            - run_json_task("path/to/task.json", data): Load task from file.
-            - run_json_task(data): Use task definition from __init__.
         
         Multiple data inputs are supported using named placeholders in the prompt template.
         Use {data_input_json} for the main input, and {placeholder_name} for additional inputs.
@@ -767,7 +753,7 @@ class TaskExecutor:
             )
         
         Args:
-            task_source: Path to task JSON file or data (if task bound at init).
+            task_file: Path to task JSON file. Required.
             data_input: Primary input data for the task (maps to {data_input_json}).
             **data_inputs: Additional named inputs (maps to {name} placeholders).
         
@@ -778,31 +764,13 @@ class TaskExecutor:
             FileNotFoundError: If task file does not exist.
             ValueError: If no valid task definition is available.
         """
-        task_def = None
-        data = None
-
-        if isinstance(task_source, str) and (task_source.endswith('.json') or os.path.exists(task_source)):
-             # Usage 1: Path provided
-             if not os.path.exists(task_source):
-                  raise FileNotFoundError(f"Task file not found: {task_source}")
-             with open(task_source, 'r', encoding='utf-8') as f:
-                task_def = json.load(f)
-             data = data_input
-        else:
-             # Usage 2: Data provided as first arg, or task_source is not a file path
-             if self.default_task_definition:
-                 task_def = self.default_task_definition
-                 data = task_source # First arg is the data
-             else:
-                 # Check if user reversed args accidentally or passed bad path
-                 if data_input is not None:
-                      # If two args, and first isn't valid file, assume it's data_input? No, standard is path, data.
-                      raise ValueError("First argument must be a valid task file path.")
-                 else:
-                      raise ValueError("No task definition file loaded in init, and no valid file path provided.")
-
-        if task_def is None:
-             raise ValueError("Failed to load task definition.")
+        if not os.path.exists(task_file):
+            raise FileNotFoundError(f"Task file not found: {task_file}")
+        
+        with open(task_file, 'r', encoding='utf-8') as f:
+            task_def = json.load(f)
+        
+        data = data_input
 
         # Parse new simplified schema structure
         prompts = task_def.get("prompts", {})
@@ -840,7 +808,7 @@ class TaskExecutor:
                 if new_provider != self.config.provider:
                     config_overrides["provider"] = new_provider
                     # We need to resolve the key for this new provider
-                    config_overrides["api_key"] = self._resolve_api_key_for_provider(new_provider)
+                    config_overrides["api_key"] = connector_genai.resolve_api_key_for_provider(new_provider.value)
             except ValueError:
                 logger.warning(f"Unknown provider in task: {genai_config['provider']}")
         
@@ -855,31 +823,38 @@ class TaskExecutor:
         if input_schema:
             if HAS_JSONSCHEMA:
                 try:
-                    jsonschema.validate(instance=data, schema=input_schema)
+                    jsonschema.validate(instance=data, schema=input_schema)  # type: ignore[possibly-undefined]
                     logger.info("Input data validation successful.")
-                except jsonschema.ValidationError as ve:
+                except jsonschema.ValidationError as ve:  # type: ignore[possibly-undefined]
                     logger.error(f"Input data validation failed: {ve.message}")
                     raise ValueError(f"Input data does not match task input_schema: {ve.message}")
             else:
                 logger.debug("Skipping input validation (jsonschema not installed).")
 
-        # Prepare content function to handle batching
-        def execute_chunk(chunk_data):
-            # Use compact JSON to match size calculation and save tokens
-            data_str = json.dumps(chunk_data, indent=None, ensure_ascii=False, separators=(',', ':'))
-            user_content = user_prompt_template.replace("{data_input_json}", data_str)
-            
-            # Replace additional named placeholders from data_inputs
-            for placeholder_name, placeholder_value in data_inputs.items():
-                placeholder_key = "{" + placeholder_name + "}"
-                if placeholder_key in user_content:
-                    # Convert value to JSON string if it's a complex type
-                    if isinstance(placeholder_value, (dict, list)):
-                        value_str = json.dumps(placeholder_value, indent=None, ensure_ascii=False, separators=(',', ':'))
-                    else:
-                        value_str = str(placeholder_value)
-                    user_content = user_content.replace(placeholder_key, value_str)
-            
+        # ====================================================================
+        # Use jinjapromptpy for prompt building with automatic batching
+        # ====================================================================
+        
+        # Initialize the prompt builder
+        prompt_builder = TaskPromptBuilder()
+        
+        # Determine max tokens for batching
+        max_tokens = config_overrides.get("max_tokens", self.config.max_tokens)
+        
+        # Build the Jinja2 template from user_prompt_template
+        # jinjapromptpy handles batching automatically based on token limits
+        user_prompts = prompt_builder.from_task_definition(
+            task_def=task_def,
+            data=data,
+            max_tokens=max_tokens,
+            **data_inputs  # Pass additional named variables (categories, context, etc.)
+        )
+        
+        logger.info(f"Generated {len(user_prompts)} prompt batch(es) using jinjapromptpy")
+        
+        # Execute each prompt batch
+        def execute_prompt(user_content: str) -> str:
+            """Execute a single prompt with the AI."""
             messages = []
             if system_prompt:
                 messages.append({"role": "system", "content": system_prompt})
@@ -890,90 +865,25 @@ class TaskExecutor:
                 messages.append({"role": "assistant", "content": assistant_prompt})
 
             return self.execute(messages, output_schema=output_schema, config_overrides=config_overrides)
-
-        # Automatic Batching / Throttling logic
-        # 1. Check if user specified explicit batch_size
-        batch_size = genai_config.get("batch_size", 0)
         
-        # 2. Smart Throttling: If no batch_size, calculate using model context window
-        if batch_size <= 0 and isinstance(data, list) and data:
-             # Identify effective provider and model
-             eff_provider = config_overrides.get("provider", self.config.provider)
-             eff_model = config_overrides.get("model_name", self.config.model_name)
-             
-             svc_class = self._get_active_service_class(eff_provider)
-             if svc_class:
-                 max_chars = svc_class.get_max_input_chars(eff_model)
-                 
-                 # Calculate Static Prompt Overhead
-                 # (approximation of system + user template + extra json overhead)
-                 # We use a safety buffer of 0.9 (10% reserve)
-                 overhead = len(system_prompt) + len(user_prompt_template) + len(assistant_prompt) + 100
-                 available_chars = int((max_chars * 0.9) - overhead)
-                 
-                 if available_chars > 100: # Ensure we have some space
-                     logger.info(f"Auto-Throttling enabled. Max Chars: {max_chars}, Available: {available_chars}")
-                     
-                     results = []
-                     current_batch = []
-                     current_batch_size = 2 # Start with 2 for brackets []
-                     
-                     for item in data:
-                         # Serialize item exactly as it will appear in the chunk (unindented, compact separators)
-                         item_str = json.dumps(item, ensure_ascii=False, separators=(',', ':'))
-                         
-                         # Check if item itself fits (plus comma overhead if not first)
-                         comma_overhead = 1 if current_batch else 0
-                         item_total_len = len(item_str) + comma_overhead
-                         
-                         # If adding this item exceeds available space...
-                         if current_batch_size + item_total_len > available_chars:
-                             if current_batch:
-                                 # Execute current batch (Guarantee: items are never split, only grouped)
-                                 logger.info(f"Executing Batch: {len(current_batch)} items (Size: {current_batch_size})")
-                                 results.append(execute_chunk(current_batch))
-                                 current_batch = []
-                                 current_batch_size = 2 # Reset
-                                 comma_overhead = 0 # Reset overhead for first item of new batch
-                                 item_total_len = len(item_str) # Recalculate without comma
-                             
-                             # If a single item is too big even for an empty batch
-                             if item_total_len + 2 > available_chars: # +2 for brackets
-                                 logger.warning(f"Single item size ({item_total_len}) exceeds context window ({available_chars}). Sending anyway (truncation risk).")
-                         
-                         current_batch.append(item)
-                         current_batch_size += item_total_len
-                     
-                     # Process final batch
-                     if current_batch:
-                         logger.info(f"Executing Final Batch: {len(current_batch)} items")
-                         results.append(execute_chunk(current_batch))
-                     
-                     # Merge results based on format
-                     output_fmt = config_overrides.get("response_format", "json" if output_schema else "text")
-                     return self._merge_batched_results(results, output_fmt)
-
-        if batch_size > 0 and isinstance(data, list):
-            logger.info(f"Executing task with batch size: {batch_size}")
+        # Execute all batches
+        if len(user_prompts) == 1:
+            # Single prompt - direct execution
+            return execute_prompt(user_prompts[0])
+        else:
+            # Multiple prompts - batch execution with result merging
             results = []
-            total_items = len(data)
-            
-            for i in range(0, total_items, batch_size):
-                chunk = data[i:i + batch_size]
-                logger.info(f"Processing batch {i//batch_size + 1}/{(total_items + batch_size - 1)//batch_size} ({len(chunk)} items)...")
+            for i, prompt in enumerate(user_prompts):
+                logger.info(f"Executing batch {i + 1}/{len(user_prompts)}...")
                 try:
-                    res_chunk = execute_chunk(chunk)
-                    results.append(res_chunk)
+                    result = execute_prompt(prompt)
+                    results.append(result)
                 except Exception as e:
-                    logger.error(f"Error processing batch starting at index {i}: {e}")
-                    # Policy: Continue or Raise? Defaulting to Raise to ensure data integrity
+                    logger.error(f"Error processing batch {i + 1}: {e}")
                     raise
             
             # Merge results based on format
             output_fmt = config_overrides.get("response_format", "json" if output_schema else "text")
             return self._merge_batched_results(results, output_fmt)
-        
-        # Standard execution (single batch)
-        return execute_chunk(data)
 
 

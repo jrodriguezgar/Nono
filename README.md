@@ -1,4 +1,4 @@
-# Nono
+# Nono - No Overhead, Neural Operations
 
 > Unified AI-powered framework for executing tasks, operations, and applications using Generative AI as the engine.
 
@@ -18,8 +18,9 @@
 - [Project Structure](#project-structure)
 - [Documentation](#documentation)
 - [Contributing](#contributing)
-- [License](#license)
 - [Contact](#contact)
+- [Dependencies](#dependencies)
+- [License](#license)
 
 ## Overview
 
@@ -76,16 +77,17 @@
    ```bash
    pip install google-genai openai httpx jsonschema certifi keyring
    ```
-
 4. Configure your API key (choose one method):
 
    **Option A: OS Keyring (Recommended - Most Secure)**
+
    ```python
    import keyring
    keyring.set_password("gemini", "api_key", "your-api-key")
    ```
 
    **Option B: Key File**
+
    ```bash
    echo "your-api-key" > nono/apikey.txt
    ```
@@ -111,12 +113,12 @@ response = client.generate_completion(
 
 ---
 
-### 📋 GenAI Tasker
+### 📋 Tasker
 
 Task-based execution framework with JSON prompt definitions and structured outputs.
 
 ```python
-from nono.genai_tasker import TaskExecutor
+from nono.tasker import TaskExecutor
 
 executor = TaskExecutor()
 result = executor.execute_task(
@@ -125,48 +127,65 @@ result = executor.execute_task(
 )
 ```
 
-📖 [GenAI Tasker Documentation](nono/genai_tasker/README.md)
+📖 [Tasker Documentation](nono/tasker/README.md)
 
 ---
 
-### ⚡ GenAI Executer
+### ⚡ Executer
 
 Generate and execute Python code from natural language with security controls.
 
 ```python
-from nono.genai_executer import CodeExecuter
+from nono.executer import CodeExecuter
 
 executer = CodeExecuter()
 result = executer.run("Calculate the factorial of 10")
 print(result.output)  # 3628800
 ```
 
-📖 [GenAI Executer Documentation](nono/genai_executer/README.md)
+📖 [Executer Documentation](nono/executer/README.md)
 
 ---
 
-### 📊 Data Stage
+### 📊 Data Operations (Templates)
 
-Token-efficient batch operations for data processing (semantic lookup, spell correction).
+Token-efficient batch operations using Jinja2 templates.
+
+**Available Templates:**
+
+| Template                    | Description                            |
+| --------------------------- | -------------------------------------- |
+| `semantic_lookup.j2`      | Fuzzy matching against reference lists |
+| `spell_correction.j2`     | Correct misspellings in text           |
+| `data_loss_prevention.j2` | Anonymize PII (GDPR, HIPAA, CCPA)      |
+| `planner.j2`              | Generate structured project plans      |
+| `decompose_tasks.j2`      | Break tasks into subtasks              |
+| `logical_ordering.j2`     | Order items by dependencies            |
+| `conditional_flow.j2`     | Route decisions based on conditions    |
 
 ```python
-from nono.genai_tasker.data_stage import DataStageExecutor
+from nono.tasker import build_from_file_blocks
 
-executor = DataStageExecutor()
-result = executor.semantic_lookup(
-    data=["Madriz", "Barzelona"],
-    reference_list=["Madrid", "Barcelona", "Sevilla"]
+# Build prompt from template with system/user blocks
+prompts = build_from_file_blocks(
+    "data_loss_prevention.j2",
+    text="John Smith, email: john@email.com, SSN: 123-45-6789",
+    compliance="GDPR"
 )
+
+# Execute with AI
+executor = TaskExecutor()
+response = executor.execute(prompts["user"], system_prompt=prompts["system"])
 ```
 
-📖 [Data Stage Documentation](nono/genai_tasker/data_stage/README.md)
+📖 See [templates/](nono/tasker/templates/) for available templates
 
 ## Quick Start
 
 ### Basic Text Generation
 
 ```python
-from nono.genai_tasker import TaskExecutor
+from nono.tasker import TaskExecutor
 
 executor = TaskExecutor()
 response = executor.execute("Explain quantum computing in simple terms.")
@@ -176,7 +195,7 @@ print(response)
 ### Task-Based Execution
 
 ```python
-from nono.genai_tasker import TaskExecutor
+from nono.tasker import TaskExecutor
 
 executor = TaskExecutor()
 result = executor.execute_task(
@@ -189,7 +208,7 @@ print(result)  # {"category": "Electronics", "subcategory": "Smartphones"}
 ### Code Generation
 
 ```python
-from nono.genai_executer import CodeExecuter
+from nono.executer import CodeExecuter
 
 executer = CodeExecuter()
 result = executer.run(
@@ -198,19 +217,366 @@ result = executer.run(
 print(result.output)
 ```
 
-### Batch Data Processing
+### Batch Data Processing (with Templates)
 
 ```python
-from nono.genai_tasker.data_stage import DataStageExecutor
+from nono.tasker import TaskExecutor, build_from_file
 
-executor = DataStageExecutor()
-
-# Spell correction
-result = executor.spell_correction(
+# Build spell correction prompt
+prompts = build_from_file(
+    template_name="spell_correction",
     data=["Teh quick brwon fox"],
     language="English"
 )
-# Result: "The quick brown fox"
+
+# Execute
+executor = TaskExecutor()
+response = executor.execute(prompts[0])
+# Response contains corrected text in TSV format
+```
+
+## Input/Output Examples
+
+Esta sección muestra ejemplos concretos de datos de entrada y las respuestas JSON esperadas para cada template.
+
+### Data Loss Prevention (DLP)
+
+Anonimización de datos personales para cumplimiento normativo.
+
+**Entrada:**
+```python
+text = """
+Customer: John Smith
+Email: john.smith@company.com
+Phone: +1 (555) 123-4567
+SSN: 123-45-6789
+Credit Card: 4532-1234-5678-9012
+"""
+compliance = "GDPR"
+```
+
+**Salida JSON:**
+```json
+{
+  "anonymized_text": "Customer: [PERSON_1]\nEmail: [EMAIL_1]\nPhone: [PHONE_1]\nSSN: [SSN_1]\nCredit Card: [CREDIT_CARD_1]",
+  "entities_found": [
+    {"type": "PERSON", "original": "John Smith", "replacement": "[PERSON_1]"},
+    {"type": "EMAIL", "original": "john.smith@company.com", "replacement": "[EMAIL_1]"},
+    {"type": "PHONE", "original": "+1 (555) 123-4567", "replacement": "[PHONE_1]"},
+    {"type": "SSN", "original": "123-45-6789", "replacement": "[SSN_1]"},
+    {"type": "CREDIT_CARD", "original": "4532-1234-5678-9012", "replacement": "[CREDIT_CARD_1]"}
+  ],
+  "compliance_standard": "GDPR",
+  "risk_level": "high",
+  "recommendations": ["Store mapping table securely", "Implement data retention policy"]
+}
+```
+
+---
+
+### Conditional Flow (Decision Routing)
+
+Enrutamiento de decisiones basado en condiciones.
+
+**Entrada:**
+```python
+input_text = "My order #12345 hasn't arrived after 2 weeks and I want a refund!"
+routes = ["billing", "technical_support", "shipping", "general_inquiry", "escalate_to_manager"]
+context = "E-commerce customer support system"
+```
+
+**Salida JSON:**
+```json
+{
+  "selected_route": "shipping",
+  "confidence": 0.85,
+  "reasoning": "Customer mentions order delivery delay, which is a shipping-related issue",
+  "alternative_routes": [
+    {"route": "escalate_to_manager", "confidence": 0.6, "reason": "Refund request may require escalation"}
+  ],
+  "extracted_entities": {
+    "order_id": "12345",
+    "issue_type": "delayed_delivery",
+    "sentiment": "frustrated"
+  }
+}
+```
+
+---
+
+### Planner (Project Planning)
+
+Generación de planes de proyecto estructurados.
+
+**Entrada:**
+```python
+goal = "Migrate legacy monolithic application to microservices architecture"
+constraints = ["6 month timeline", "Budget: $500K", "Team of 5 developers", "Zero downtime requirement"]
+```
+
+**Salida JSON:**
+```json
+{
+  "project_name": "Monolith to Microservices Migration",
+  "total_duration": "6 months",
+  "phases": [
+    {
+      "name": "Analysis & Planning",
+      "duration": "4 weeks",
+      "tasks": [
+        "Document current architecture",
+        "Identify service boundaries",
+        "Define API contracts"
+      ],
+      "deliverables": ["Architecture document", "Service decomposition diagram"],
+      "resources": ["2 senior developers", "1 architect"]
+    },
+    {
+      "name": "Infrastructure Setup",
+      "duration": "3 weeks",
+      "tasks": [
+        "Set up Kubernetes cluster",
+        "Configure CI/CD pipelines",
+        "Implement service mesh"
+      ],
+      "deliverables": ["Production-ready K8s environment", "Deployment automation"],
+      "resources": ["1 DevOps engineer", "1 developer"]
+    }
+  ],
+  "milestones": [
+    {"name": "Architecture approved", "date": "Week 4"},
+    {"name": "First service deployed", "date": "Week 10"},
+    {"name": "Full migration complete", "date": "Week 24"}
+  ],
+  "risks": [
+    {"risk": "Data consistency during migration", "mitigation": "Implement saga pattern"},
+    {"risk": "Performance degradation", "mitigation": "Load testing before each release"}
+  ]
+}
+```
+
+---
+
+### Decompose Tasks (Task Breakdown)
+
+Descomposición de tareas complejas en subtareas.
+
+**Entrada:**
+```python
+task = "Implement user authentication system with OAuth2 and MFA"
+granularity = "detailed"
+```
+
+**Salida JSON:**
+```json
+{
+  "original_task": "Implement user authentication system with OAuth2 and MFA",
+  "subtasks": [
+    {
+      "id": 1,
+      "title": "Design authentication architecture",
+      "description": "Create technical design document for auth flow",
+      "estimated_hours": 8,
+      "priority": "high",
+      "dependencies": []
+    },
+    {
+      "id": 2,
+      "title": "Set up OAuth2 provider integration",
+      "description": "Integrate with Google, GitHub, Microsoft OAuth2",
+      "estimated_hours": 16,
+      "priority": "high",
+      "dependencies": [1]
+    },
+    {
+      "id": 3,
+      "title": "Implement JWT token management",
+      "description": "Create token generation, validation, and refresh logic",
+      "estimated_hours": 12,
+      "priority": "high",
+      "dependencies": [1]
+    },
+    {
+      "id": 4,
+      "title": "Add MFA support",
+      "description": "Implement TOTP-based two-factor authentication",
+      "estimated_hours": 16,
+      "priority": "medium",
+      "dependencies": [2, 3]
+    },
+    {
+      "id": 5,
+      "title": "Create user session management",
+      "description": "Handle login, logout, session timeout",
+      "estimated_hours": 8,
+      "priority": "medium",
+      "dependencies": [3]
+    }
+  ],
+  "total_estimated_hours": 60,
+  "critical_path": [1, 2, 4],
+  "parallel_opportunities": [[2, 3], [4, 5]]
+}
+```
+
+---
+
+### Logical Ordering (Dependency Ordering)
+
+Ordenación de elementos según dependencias lógicas.
+
+**Entrada:**
+```python
+items = [
+    "Deploy to production",
+    "Write unit tests",
+    "Code review",
+    "Implement feature",
+    "Create PR",
+    "QA testing",
+    "Merge to main"
+]
+context = "Software development workflow"
+```
+
+**Salida JSON:**
+```json
+{
+  "ordered_items": [
+    {"position": 1, "item": "Implement feature", "reason": "Core work must be done first"},
+    {"position": 2, "item": "Write unit tests", "reason": "Tests validate the implementation"},
+    {"position": 3, "item": "Create PR", "reason": "Code ready for review"},
+    {"position": 4, "item": "Code review", "reason": "Peer review before merge"},
+    {"position": 5, "item": "Merge to main", "reason": "Approved code integrated"},
+    {"position": 6, "item": "QA testing", "reason": "Integration testing on main branch"},
+    {"position": 7, "item": "Deploy to production", "reason": "Final step after all validations"}
+  ],
+  "dependency_graph": {
+    "Implement feature": [],
+    "Write unit tests": ["Implement feature"],
+    "Create PR": ["Write unit tests"],
+    "Code review": ["Create PR"],
+    "Merge to main": ["Code review"],
+    "QA testing": ["Merge to main"],
+    "Deploy to production": ["QA testing"]
+  },
+  "parallel_groups": [
+    ["Write unit tests"]
+  ]
+}
+```
+
+---
+
+### Semantic Lookup (Fuzzy Matching)
+
+Búsqueda semántica con coincidencia aproximada.
+
+**Entrada:**
+```python
+query = "iphone 15 pro"
+candidates = [
+    "Apple iPhone 15 Pro Max 256GB",
+    "Samsung Galaxy S24 Ultra",
+    "Apple iPhone 14 Pro",
+    "Google Pixel 8 Pro",
+    "Apple iPhone 15 128GB"
+]
+threshold = 0.7
+```
+
+**Salida JSON:**
+```json
+{
+  "query": "iphone 15 pro",
+  "matches": [
+    {"candidate": "Apple iPhone 15 Pro Max 256GB", "score": 0.95, "reason": "Exact model match with variant"},
+    {"candidate": "Apple iPhone 15 128GB", "score": 0.82, "reason": "Same generation, different variant"},
+    {"candidate": "Apple iPhone 14 Pro", "score": 0.75, "reason": "Same product line, previous generation"}
+  ],
+  "best_match": "Apple iPhone 15 Pro Max 256GB",
+  "no_match_candidates": [
+    {"candidate": "Samsung Galaxy S24 Ultra", "score": 0.25},
+    {"candidate": "Google Pixel 8 Pro", "score": 0.30}
+  ]
+}
+```
+
+---
+
+### Spell Correction
+
+Corrección ortográfica con formato TSV.
+
+**Entrada:**
+```python
+data = ["Teh quick brwon fox", "Programing is awsome", "Recieve teh mesage"]
+language = "English"
+```
+
+**Salida TSV:**
+```
+Original	Corrected	Changes
+Teh quick brwon fox	The quick brown fox	Teh→The, brwon→brown
+Programing is awsome	Programming is awesome	Programing→Programming, awsome→awesome
+Recieve teh mesage	Receive the message	Recieve→Receive, teh→the, mesage→message
+```
+
+---
+
+### Product Categorizer
+
+Categorización de productos.
+
+**Entrada:**
+```python
+product = "Sony WH-1000XM5 Wireless Noise Canceling Headphones"
+```
+
+**Salida JSON:**
+```json
+{
+  "product": "Sony WH-1000XM5 Wireless Noise Canceling Headphones",
+  "category": "Electronics",
+  "subcategory": "Audio",
+  "type": "Headphones",
+  "attributes": {
+    "brand": "Sony",
+    "model": "WH-1000XM5",
+    "connectivity": "Wireless",
+    "features": ["Noise Canceling", "Bluetooth"]
+  },
+  "confidence": 0.98
+}
+```
+
+---
+
+### Name Classifier
+
+Clasificación de nombres propios.
+
+**Entrada:**
+```python
+names = ["María García", "Tokyo", "Microsoft", "Amazon River", "Albert Einstein"]
+```
+
+**Salida JSON:**
+```json
+{
+  "classifications": [
+    {"name": "María García", "type": "PERSON", "subtype": "individual", "confidence": 0.99},
+    {"name": "Tokyo", "type": "LOCATION", "subtype": "city", "confidence": 0.98},
+    {"name": "Microsoft", "type": "ORGANIZATION", "subtype": "company", "confidence": 0.99},
+    {"name": "Amazon River", "type": "LOCATION", "subtype": "geographical_feature", "confidence": 0.95},
+    {"name": "Albert Einstein", "type": "PERSON", "subtype": "historical_figure", "confidence": 0.99}
+  ],
+  "summary": {
+    "PERSON": 2,
+    "LOCATION": 2,
+    "ORGANIZATION": 1
+  }
+}
 ```
 
 ## Configuration
@@ -219,11 +585,11 @@ result = executor.spell_correction(
 
 API keys are resolved in this order:
 
-| Priority | Method | Description |
-|----------|--------|-------------|
-| 1st | Argument | `TaskExecutor(api_key="...")` |
-| 2nd | OS Keyring | Secure credential store (auto-installed) |
-| 3rd | Key Files | `{provider}_api_key.txt` or `apikey.txt` |
+| Priority | Method     | Description                                  |
+| -------- | ---------- | -------------------------------------------- |
+| 1st      | Argument   | `TaskExecutor(api_key="...")`              |
+| 2nd      | OS Keyring | Secure credential store (auto-installed)     |
+| 3rd      | Key Files  | `{provider}_api_key.txt` or `apikey.txt` |
 
 **Recommended: Use OS Keyring**
 
@@ -278,37 +644,59 @@ Nono/
     ├── connector/              # Low-level AI connectors
     │   ├── connector_genai.py
     │   └── README_connector_genai.md
-    ├── genai_tasker/           # Task execution framework
+    ├── tasker/                 # Task execution framework
     │   ├── genai_tasker.py
-    │   ├── README.md
+    │   ├── jinja_prompt_builder.py
     │   ├── prompts/            # JSON task definitions
-    │   │   ├── name_classifier.json
-    │   │   └── product_categorizer.json
-    │   ├── data_stage/         # Batch data operations
-    │   │   ├── core.py
-    │   │   ├── operations.py
-    │   │   ├── README.md
-    │   │   └── examples/
-    │   └── examples/
-    └── genai_executer/         # Code generation & execution
-        ├── genai_executer.py
-        ├── config.json
-        ├── README.md
-        └── examples/
+    │   └── templates/          # Jinja2 templates
+    │       ├── conditional_flow.j2      # Decision routing
+    │       ├── data_loss_prevention.j2  # PII anonymization (DLP)
+    │       ├── decompose_tasks.j2       # Task breakdown
+    │       ├── logical_ordering.j2      # Dependency ordering
+    │       ├── name_classifier.j2       # Name classification
+    │       ├── planner.j2               # Project planning
+    │       ├── product_categorizer.j2   # Product categorization
+    │       ├── semantic_lookup.j2       # Fuzzy matching
+    │       └── spell_correction.j2      # Spell checking
+    ├── executer/               # Code generation & execution
+    │   ├── genai_executer.py
+    │   └── config.json
+    └── examples/               # Usage examples
 ```
 
 ## Documentation
 
-| Document                                                          | Description                     |
-| ----------------------------------------------------------------- | ------------------------------- |
-| [Connector Guide](nono/connector/README_connector_genai.md)          | Low-level AI provider interface |
-| [GenAI Tasker](nono/genai_tasker/README.md)                          | Task-based execution framework  |
-| [Task Configuration](nono/genai_tasker/README_task_configuration.md) | JSON prompt definition guide    |
-| [Technical Reference](nono/genai_tasker/README_technical.md)         | Architecture and internals      |
-| [GenAI Executer](nono/genai_executer/README.md)                      | Code generation and execution   |
-| [Data Stage](nono/genai_tasker/data_stage/README.md)                 | Batch data operations           |
+| Document                                                    | Description                     |
+| ----------------------------------------------------------- | ------------------------------- |
+| [Connector Guide](nono/connector/README_connector_genai.md)    | Low-level AI provider interface |
+| [Tasker](nono/tasker/README.md)                                | Task-based execution framework  |
+| [Task Configuration](nono/tasker/README_task_configuration.md) | JSON prompt definition guide    |
+| [Technical Reference](nono/tasker/README_technical.md)         | Architecture and internals      |
+| [Executer](nono/executer/README.md)                            | Code generation and execution   |
 
-## Credits
+---
 
-**Author:** DatamanEdge
-**License:** MIT
+## Dependencies
+
+| Package | Version | Description |
+|---------|---------|-------------|
+| `google-genai` | >= 1.0.0 | Google Gemini SDK ([docs](https://ai.google.dev/gemini-api/docs)) |
+| `openai` | >= 1.0.0 | OpenAI SDK |
+| `requests` | >= 2.28.0 | HTTP library for API calls |
+| `certifi` | >= 2023.0.0 | SSL certificates for secure connections |
+| `jsonschema` | >= 4.0.0 | JSON schema validation |
+| `jinja2` | >= 3.0.0 | Template engine for prompts |
+
+---
+
+## Contact
+
+- **Author**: [DatamanEdge](https://github.com/DatamanEdge)
+- **Email**: [jrodriguezga@outlook.com](mailto:jrodriguezga@outlook.com)
+- **LinkedIn**: [Javier Rodríguez](https://es.linkedin.com/in/javier-rodriguez-ga)
+
+---
+
+## License
+
+MIT © 2026 DatamanEdge. See [LICENSE](../../LICENSE).

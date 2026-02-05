@@ -135,3 +135,26 @@ configure_ssl_verification(SSLVerificationMode.CERTIFI)
 ```
 
 Esto asegura que las conexiones SSL sean seguras y verificadas.
+
+---
+
+## Dependencies
+
+| Package | Version | Description |
+|---------|---------|-------------|
+| `certifi` | >= 2023.0.0 | SSL certificates for secure connections |
+| `requests` | >= 2.28.0 | HTTP library with SSL support |
+
+---
+
+## Contact
+
+- **Author**: [DatamanEdge](https://github.com/DatamanEdge)
+- **Email**: [jrodriguezga@outlook.com](mailto:jrodriguezga@outlook.com)
+- **LinkedIn**: [Javier Rodríguez](https://es.linkedin.com/in/javier-rodriguez-ga)
+
+---
+
+## License
+
+MIT © 2026 DatamanEdge. See [LICENSE](../../LICENSE).

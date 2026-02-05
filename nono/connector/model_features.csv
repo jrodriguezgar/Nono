@@ -1,0 +1,12 @@
+provider	model	prompt_size
+openrouter	openrouter/auto	2000000
+openrouter	google/gemini-3-flash-preview	1048576
+openrouter	openai/gpt-5.2-chat	128000
+openrouter	anthropic/claude-opus-4.5	200000
+openrouter	qwen/qwen3-235b-a22b-2507	262144
+openrouter	tngtech/deepseek-r1t2-chimera:free	163840
+openrouter	deepseek/deepseek-v3.2	163840
+openrouter	moonshotai/kimi-k2-thinking	262144
+google	gemini-3-flash-preview	1048576
+
+
