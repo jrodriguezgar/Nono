@@ -1,5 +1,5 @@
 """
-GenAI Executer - Generative AI code generation and execution utilities
+Executer - Generative AI code generation and execution utilities
 
 This module provides functionality to generate Python code from natural language
 instructions using LLMs and execute it in a sandboxed environment.

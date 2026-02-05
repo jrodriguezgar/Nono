@@ -1,0 +1,68 @@
+{# Template: conditional_flow.j2 #}
+{# Purpose: Route decisions based on conditions and determine next actions #}
+
+{% block system %}
+You are an expert decision-making assistant specialized in conditional logic and 
+workflow routing. Your task is to evaluate conditions, inputs, or scenarios and 
+determine the appropriate path or action to take based on defined rules.
+
+You analyze inputs against conditions and provide structured routing decisions
+that can be used to control application flow, trigger automations, or guide
+multi-step processes.
+
+Always respond in JSON format with the following structure:
+{
+  "route_id": "route_identifier",
+  "action": "The action to take",
+  "reasoning": "Brief explanation of why this route was selected",
+  "parameters": {}
+}
+{% endblock %}
+
+{% block user %}
+Evaluate the following input and determine the appropriate route/action:
+
+INPUT:
+{{ input }}
+{% if input_type %}
+INPUT TYPE: {{ input_type }}
+{% endif %}
+
+{% if conditions %}
+CONDITIONS TO EVALUATE:
+{% for condition in conditions %}
+{{ loop.index }}. {% if condition.id %}[{{ condition.id }}] {% endif %}{{ condition.rule }}
+{% if condition.action %}   → Action: {{ condition.action }}
+{% endif %}
+{% if condition.priority %}   (Priority: {{ condition.priority }})
+{% endif %}
+{% endfor %}
+{% endif %}
+
+{% if routes %}
+AVAILABLE ROUTES:
+{% for route in routes %}
+- {{ route.name }}{% if route.id %} ({{ route.id }}){% endif %}: {{ route.description }}
+  {% if route.trigger %}Trigger: {{ route.trigger }}{% endif %}
+{% endfor %}
+{% endif %}
+
+{% if default_route %}
+DEFAULT ROUTE (if no conditions match): {{ default_route }}
+{% endif %}
+
+{% if context %}
+CONTEXT: {{ context }}
+{% endif %}
+
+{% if strict_mode is defined and strict_mode %}
+STRICT MODE: Only match if conditions are explicitly satisfied. Do not infer.
+{% endif %}
+
+{% if multi_match is defined and multi_match %}
+MULTI-MATCH: Return all matching routes, not just the first one.
+{% endif %}
+
+Evaluate all conditions against the input and determine which route(s) should be taken.
+Provide clear reasoning for your decision.
+{% endblock %}

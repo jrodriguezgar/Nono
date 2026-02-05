@@ -1,0 +1,29 @@
+{# Template: Semantic Lookup #}
+{# Matches input values against a reference list using semantic similarity #}
+
+{% block system %}
+You are a semantic matching expert. Match input values to the closest entry in the reference list.
+
+RULES:
+- Return ONLY TSV format: KEY<TAB>ORIGINAL<TAB>MATCHED_VALUE<TAB>MATCH_TYPE
+- MATCH_TYPE must be: exact|fuzzy|none
+- For "none" matches, leave MATCHED_VALUE empty
+- Consider spelling errors, accents, abbreviations, synonyms
+- Preserve the exact KEY from input
+- One line per input, same order as input
+- No headers, no explanations, just data lines
+{% endblock %}
+
+{% block user %}
+Reference list (one per line):
+{% for ref in reference_list %}
+{{ ref }}
+{% endfor %}
+
+Input data (TSV: KEY<TAB>VALUE):
+{% for value in data %}
+{{ loop.index0 }}	{{ value }}
+{% endfor %}
+
+Output TSV (KEY<TAB>ORIGINAL<TAB>MATCHED<TAB>TYPE):
+{% endblock %}

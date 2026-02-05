@@ -143,61 +143,35 @@ class CodeExecutionError(Exception):
         self.original_error = original_error
 
 
-# Import the connector_genai module (shared) and genai_tasker classes
+# Import tasker for AI operations and prompt building
 try:
-    from ..connector import connector_genai
-    from ..genai_tasker.genai_tasker import (
-        AIProvider, AIConfiguration, 
-        GeminiClient, OpenAIClient, PerplexityClient, OllamaClient
-    )
+    from ..tasker import TaskExecutor, TaskPromptBuilder, build_prompt
 except ImportError:
     # Fallback for when running as script - add parent dir to path
     _nono_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     if _nono_dir not in sys.path:
         sys.path.insert(0, _nono_dir)
     try:
-        from connector import connector_genai
-        from genai_tasker.genai_tasker import (
-            AIProvider, AIConfiguration,
-            GeminiClient, OpenAIClient, PerplexityClient, OllamaClient
-        )
+        from tasker import TaskExecutor, TaskPromptBuilder, build_prompt
     except ImportError:
-        from nono.connector import connector_genai
-        from nono.genai_tasker.genai_tasker import (
-            AIProvider, AIConfiguration,
-            GeminiClient, OpenAIClient, PerplexityClient, OllamaClient
-        )
+        from nono.tasker import TaskExecutor, TaskPromptBuilder, build_prompt
 
 
-# Code generation system prompt
-CODE_GENERATION_SYSTEM_PROMPT = """You are an expert Python programmer. Your task is to generate clean, 
-efficient, and well-documented Python code based on the user's instructions.
-
-IMPORTANT RULES:
-1. Generate ONLY valid Python code - no explanations, no markdown formatting.
-2. Do NOT wrap code in ```python``` blocks or any other markers.
-3. Include necessary imports at the top of the code.
-4. Handle potential errors gracefully.
-5. Print results to stdout so they can be captured.
-6. The code must be self-contained and executable.
-7. Use descriptive variable names and add brief comments.
-8. If the task involves calculations, print the final result clearly.
-9. If the task involves file operations, be careful with paths.
-10. NEVER use input() or any interactive functions - assume all inputs are in the instruction.
-
-Output ONLY the Python code, nothing else."""
+# Code generation template file (located in tasker/templates/)
+CODE_GENERATION_TEMPLATE = "python_programming.j2"
 
 
 class CodeExecuter:
     """
     Main class for generating and executing Python code using AI.
     
-    This class uses LLMs to generate Python code from natural language
-    instructions and provides safe execution environments.
+    This class wraps TaskExecutor from the tasker module to generate Python 
+    code from natural language instructions using J2 templates, and provides
+    safe execution environments for the generated code.
     
     Attributes:
-        config: AI configuration for the LLM.
-        client: The AI client instance.
+        tasker: TaskExecutor instance for AI operations.
+        prompt_builder: TaskPromptBuilder for J2 template rendering.
         execution_mode: How to execute generated code (subprocess/exec).
         security_mode: Security level for code execution (safe/permissive).
         allowed_modules: List of allowed modules for sandboxed execution.
@@ -252,30 +226,29 @@ class CodeExecuter:
     
     def __init__(
         self,
+        provider: str,
+        model_name: str,
         config_file: Optional[str] = None,
-        provider: Optional[str] = None,
-        model_name: Optional[str] = None,
-        api_key: Optional[str] = None,
         execution_mode: Optional[ExecutionMode] = None,
         security_mode: Optional[SecurityMode] = None,
-        allowed_modules: Optional[List[str]] = None
+        allowed_modules: Optional[List[str]] = None,
+        temperature: Union[float, str] = "coding"
     ):
         """
         Initialize the CodeExecuter.
         
-        Configuration priority (highest to lowest):
-        1. Parameters passed directly to __init__
-        2. Config file (config_file parameter or default config.json)
-        3. Built-in defaults
+        This class wraps TaskExecutor from tasker to handle AI operations,
+        using J2 templates for prompt building. Provider, model and credentials
+        are handled by TaskExecutor/connector_genai (same as tasker).
         
         Args:
+            provider: AI provider name (google, openai, perplexity, groq, etc.). Required.
+            model_name: Model name to use. Required.
             config_file: Path to configuration file (JSON). If None, looks for config.json in module dir.
-            provider: AI provider name (gemini, openai, perplexity, ollama).
-            model_name: Model name to use.
-            api_key: API key for the provider.
             execution_mode: How to execute code (subprocess/exec).
             security_mode: Security level (SAFE blocks dangerous ops, PERMISSIVE allows all).
             allowed_modules: List of allowed modules for execution.
+            temperature: Sampling temperature for code generation (default: 0.2 for deterministic code).
         """
         # Try to load default config file if none specified
         default_config = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
@@ -284,7 +257,7 @@ class CodeExecuter:
         if effective_config_file:
             logger.info(f"Loading config from: {effective_config_file}")
         
-        # Load config file to get execution settings
+        # Load config file to get execution settings only
         config_data = self._load_config_file(effective_config_file)
         
         # Resolve execution settings (param > config > default)
@@ -308,18 +281,23 @@ class CodeExecuter:
         
         self.allowed_modules = allowed_modules or self.DEFAULT_ALLOWED_MODULES
         
-        # Build AI configuration
-        self.config = self._build_config(effective_config_file, provider, model_name, api_key)
+        # Initialize TaskExecutor from tasker (handles provider, model, and credentials)
+        self.tasker = TaskExecutor(
+            provider=provider,
+            model=model_name,
+            temperature=temperature,
+            max_tokens=4096
+        )
         
-        # Initialize AI client directly
-        self.client = self._create_client()
+        # Initialize prompt builder for J2 templates
+        self.prompt_builder = TaskPromptBuilder()
         
         # Setup executions directory
         self.executions_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "executions")
         os.makedirs(self.executions_dir, exist_ok=True)
         
         security_label = "🔒 SAFE" if self.security_mode == SecurityMode.SAFE else "⚠️ PERMISSIVE"
-        msg_log(f"CodeExecuter initialized - Provider: {self.config.provider.value}, Model: {self.config.model_name}, Security: {security_label}", logging.INFO)
+        msg_log(f"CodeExecuter initialized - Provider: {provider}, Model: {model_name}, Security: {security_label}", logging.INFO)
     
     def _load_config_file(self, config_file: Optional[str]) -> Dict[str, Any]:
         """
@@ -341,203 +319,41 @@ class CodeExecuter:
             logger.warning(f"Error loading config file {config_file}: {e}")
             return {}
     
-    def _create_client(self):
-        """
-        Factory method to create the appropriate AI client.
-        
-        Returns:
-            AI client instance for the configured provider.
-        """
-        client_map = {
-            AIProvider.GEMINI: GeminiClient,
-            AIProvider.OPENAI: OpenAIClient,
-            AIProvider.PERPLEXITY: PerplexityClient,
-            AIProvider.OLLAMA: OllamaClient,
-        }
-        
-        client_class = client_map.get(self.config.provider)
-        if client_class is None:
-            raise ValueError(f"Unsupported provider: {self.config.provider}")
-        
-        return client_class(self.config)
-    
-    def _build_config(
-        self,
-        config_file: Optional[str],
-        provider: Optional[str],
-        model_name: Optional[str],
-        api_key: Optional[str]
-    ) -> AIConfiguration:
-        """
-        Build AI configuration from parameters or config file.
-        
-        Args:
-            config_file: Path to configuration file.
-            provider: Provider name override.
-            model_name: Model name override.
-            api_key: API key override.
-        
-        Returns:
-            AIConfiguration instance.
-        """
-        # Default values
-        default_provider = AIProvider.GEMINI
-        default_model = "gemini-2.0-flash"
-        default_temp = 0.2  # Lower temperature for more deterministic code
-        
-        if config_file and os.path.exists(config_file):
-            # Load from config file
-            try:
-                if config_file.endswith('.toml'):
-                    import tomllib
-                    with open(config_file, 'rb') as f:
-                        data = tomllib.load(f)
-                else:
-                    with open(config_file, 'r', encoding='utf-8') as f:
-                        data = json.load(f)
-                
-                genai_data = data.get("genai", data)
-                
-                prov_str = provider or genai_data.get("provider", "gemini")
-                try:
-                    resolved_provider = AIProvider(prov_str.lower())
-                except ValueError:
-                    resolved_provider = default_provider
-                
-                return AIConfiguration(
-                    provider=resolved_provider,
-                    model_name=model_name or genai_data.get("model", default_model),
-                    api_key=api_key or self._find_api_key(resolved_provider),
-                    temperature=genai_data.get("temperature", default_temp),
-                    max_tokens=genai_data.get("max_tokens", 4096),
-                    system_instruction=CODE_GENERATION_SYSTEM_PROMPT
-                )
-            except Exception as e:
-                logger.warning(f"Error loading config file: {e}, using defaults")
-        
-        # Build from parameters
-        prov_str = provider or "gemini"
-        try:
-            resolved_provider = AIProvider(prov_str.lower())
-        except ValueError:
-            resolved_provider = default_provider
-        
-        return AIConfiguration(
-            provider=resolved_provider,
-            model_name=model_name or default_model,
-            api_key=api_key or self._find_api_key(resolved_provider),
-            temperature=default_temp,
-            max_tokens=4096,
-            system_instruction=CODE_GENERATION_SYSTEM_PROMPT
-        )
-    
-    def _find_api_key(self, provider: AIProvider) -> str:
-        """
-        Find API key for the given provider.
-        
-        Search order: 1. Keyring, 2. Key files (with auto-migration to keyring).
-        
-        Args:
-            provider: The AI provider.
-        
-        Returns:
-            API key string.
-        """
-        if provider == AIProvider.OLLAMA:
-            return "ollama-local"
-        
-        # 1. Try keyring first
-        key = self._get_api_key_from_keyring(provider.value)
-        if key:
-            return key
-        
-        # 2. Search in key files
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        project_root = os.path.dirname(current_dir)  # nono/
-        
-        key_files = [f"{provider.value}_api_key.txt", "apikey.txt"]
-        
-        for kf in key_files:
-            for search_dir in [current_dir, project_root]:
-                path = os.path.join(search_dir, kf)
-                if os.path.exists(path):
-                    with open(path, 'r') as f:
-                        key = f.read().strip()
-                    # Migrate to keyring for future use
-                    if key:
-                        self._set_api_key_to_keyring(provider.value, key)
-                        return key
-        
-        return ""
-    
-    def _get_api_key_from_keyring(self, provider_name: str) -> Optional[str]:
-        """
-        Retrieve API key from OS keyring/credential store.
-        
-        Args:
-            provider_name: The provider name (service name in keyring).
-        
-        Returns:
-            API key string, or None if not found or keyring unavailable.
-        """
-        try:
-            if connector_genai.install_library("keyring"):
-                import keyring
-                key = keyring.get_password(provider_name, "api_key")
-                if key:
-                    logger.info(f"API key loaded from keyring for '{provider_name}'")
-                    return key
-        except Exception as e:
-            logger.debug(f"Keyring lookup failed for '{provider_name}': {e}")
-        return None
-    
-    def _set_api_key_to_keyring(self, provider_name: str, api_key: str) -> bool:
-        """
-        Store or update API key in OS keyring/credential store.
-        
-        Args:
-            provider_name: The provider name (service name in keyring).
-            api_key: The API key to store.
-        
-        Returns:
-            True if successfully stored, False otherwise.
-        """
-        try:
-            if connector_genai.install_library("keyring"):
-                import keyring
-                keyring.set_password(provider_name, "api_key", api_key)
-                logger.info(f"API key migrated to keyring for '{provider_name}'")
-                return True
-        except Exception as e:
-            logger.debug(f"Failed to store API key in keyring for '{provider_name}': {e}")
-        return False
-    
     @event_log(message="Code Generation")
-    def generate_code(self, instruction: str, context: Optional[str] = None) -> str:
+    def generate_code(self, instruction: str, context: Optional[str] = None, previous_error: Optional[str] = None) -> str:
         """
         Generate Python code from natural language instruction.
+        
+        Uses J2 template (code_executer.j2) to build prompts and
+        TaskExecutor to generate the code.
         
         Args:
             instruction: Natural language description of desired code.
             context: Optional additional context or constraints.
+            previous_error: Optional error from previous attempt (for retry).
         
         Returns:
             Generated Python code as string.
         """
-        # Build the prompt
-        full_prompt = f"Generate Python code for the following task:\n\n{instruction}"
+        # Build prompts using J2 template (gets both system and user blocks)
+        # Map: instruction -> topic, context -> constraints, previous_error -> requirements
+        requirements = [f"Fix error: {previous_error}"] if previous_error else None
+        prompts = self.prompt_builder.from_template_file_blocks(
+            CODE_GENERATION_TEMPLATE,
+            topic=instruction,
+            constraints=context,
+            requirements=requirements
+        )
         
-        if context:
-            full_prompt += f"\n\nAdditional context:\n{context}"
+        # Prepare messages
+        messages = []
+        if prompts.get("system"):
+            messages.append({"role": "system", "content": prompts["system"]})
+        if prompts.get("user"):
+            messages.append({"role": "user", "content": prompts["user"]})
         
-        # Prepare messages with system prompt
-        messages = [
-            {"role": "system", "content": CODE_GENERATION_SYSTEM_PROMPT},
-            {"role": "user", "content": full_prompt}
-        ]
-        
-        # Generate code using the AI client
-        code = self.client.generate_content(messages)
+        # Generate code using TaskExecutor
+        code = self.tasker.execute(messages)
         
         # Clean up the response - remove any markdown formatting
         code = self._clean_code_response(code)
@@ -814,10 +630,10 @@ class CodeExecuter:
         Returns:
             ExecutionResult with generated code and output.
         """
-        # Use config defaults if not specified
-        timeout = timeout if timeout is not None else self.default_timeout
-        max_retries = max_retries if max_retries is not None else self.default_max_retries
-        save_execution = save_execution if save_execution is not None else self.default_save_executions
+        # Use config defaults if not specified (ensure int types for type checker)
+        effective_timeout: int = timeout if timeout is not None else self.default_timeout
+        effective_max_retries: int = max_retries if max_retries is not None else self.default_max_retries
+        effective_save: bool = save_execution if save_execution is not None else self.default_save_executions
         
         # Generate unique execution ID
         execution_id = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
@@ -827,17 +643,16 @@ class CodeExecuter:
         last_result = None
         last_error = ""
         
-        while attempts <= max_retries:
+        while attempts <= effective_max_retries:
             attempts += 1
             
-            # Build context including previous errors
-            full_context = context or ""
-            if last_error and retry_on_error:
-                full_context += f"\n\nPREVIOUS ATTEMPT FAILED with error:\n{last_error}\nPlease fix the code."
-            
-            # Generate code
+            # Generate code (pass previous error for retry, not merged with context)
             try:
-                code = self.generate_code(instruction, full_context if full_context else None)
+                code = self.generate_code(
+                    instruction, 
+                    context=context,
+                    previous_error=last_error if retry_on_error else None
+                )
             except Exception as e:
                 logger.error(f"Code generation failed: {e}")
                 final_result = ExecutionResult(
@@ -849,12 +664,12 @@ class CodeExecuter:
                     instruction=instruction,
                     timestamp=timestamp
                 )
-                if save_execution:
+                if effective_save:
                     self._save_execution(final_result)
                 return final_result
             
             # Execute code
-            result = self.execute_code(code, timeout)
+            result = self.execute_code(code, effective_timeout)
             
             # Enrich result with metadata
             result.execution_id = execution_id
@@ -864,17 +679,17 @@ class CodeExecuter:
             last_result = result
             
             if result.success:
-                if save_execution:
+                if effective_save:
                     self._save_execution(result)
                 return result
             
             # Prepare error for retry
             last_error = result.error
             
-            if not retry_on_error or attempts > max_retries:
+            if not retry_on_error or attempts > effective_max_retries:
                 break
             
-            logger.warning(f"Execution failed, retrying ({attempts}/{max_retries})...")
+            logger.warning(f"Execution failed, retrying ({attempts}/{effective_max_retries})...")
         
         final_result = last_result if last_result else ExecutionResult(
             success=False,
@@ -886,7 +701,7 @@ class CodeExecuter:
             timestamp=timestamp
         )
         
-        if save_execution:
+        if effective_save:
             self._save_execution(final_result)
         
         return final_result
@@ -921,8 +736,8 @@ class CodeExecuter:
             "output": result.output,
             "error": result.error,
             "code": result.code,
-            "provider": self.config.provider.value,
-            "model": self.config.model_name,
+            "provider": self.tasker.config.provider.value,
+            "model": self.tasker.config.model_name,
             "security_mode": self.security_mode.value,
             "execution_mode": self.execution_mode.value
         }

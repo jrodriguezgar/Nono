@@ -308,7 +308,7 @@ from genai_tasker import AIConfiguration, AIProvider
 
 config = AIConfiguration(
     provider=AIProvider.GEMINI,
-    model_name="gemini-1.5-flash",
+    model_name="gemini-3-flash-preview",
     api_key="your-api-key",
     temperature=0.5,
     max_tokens=4096,
@@ -573,7 +573,7 @@ Task definitions are JSON files that configure execution parameters.
   },
   "genai": {
     "provider": "gemini",
-    "model": "gemini-1.5-flash",
+    "model": "gemini-3-flash-preview",
     "temperature": "coding",
     "max_tokens": 4096,
     "batch_size": 0
@@ -623,7 +623,7 @@ from connector_genai import GeminiService, ResponseFormat
 
 # Initialize service
 service = GeminiService(
-    model_name="gemini-1.5-flash",
+    model_name="gemini-3-flash-preview",
     api_key="your-api-key"
 )
 
@@ -673,7 +673,26 @@ result = executor.execute(
 
 ---
 
-## Credits
+## Dependencies
 
-**Author:** DatamanEdge
-**License:** MIT
+| Package | Version | Description |
+|---------|---------|-------------|
+| `google-genai` | >= 1.0.0 | Google Gemini SDK ([docs](https://ai.google.dev/gemini-api/docs)) |
+| `requests` | >= 2.28.0 | HTTP library for API calls |
+| `jsonschema` | >= 4.0.0 | JSON schema validation |
+| `certifi` | >= 2023.0.0 | SSL certificates |
+| `jinja2` | >= 3.0.0 | Template engine for prompts |
+
+---
+
+## Contact
+
+- **Author**: [DatamanEdge](https://github.com/DatamanEdge)
+- **Email**: [jrodriguezga@outlook.com](mailto:jrodriguezga@outlook.com)
+- **LinkedIn**: [Javier Rodríguez](https://es.linkedin.com/in/javier-rodriguez-ga)
+
+---
+
+## License
+
+MIT © 2026 DatamanEdge. See [LICENSE](../../LICENSE).

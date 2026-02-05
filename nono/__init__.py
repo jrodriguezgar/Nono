@@ -6,9 +6,9 @@ Supports multiple LLM providers: Google Gemini, OpenAI, Perplexity, DeepSeek, Gr
 
 Submodules:
 - connector: Shared AI service connectors
-- genai_tasker: Task execution framework
+- tasker: Task execution framework
   - data_stage: Batch data operations with intelligent throttling
-- genai_executer: Code generation and execution
+- executer: Code generation and execution
 """
 
 __version__ = "1.1.0"

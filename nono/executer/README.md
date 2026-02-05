@@ -1,15 +1,25 @@
-# GenAI Executer
+# Executer
 
 Module for generating and executing Python code from natural language instructions using LLMs.
 
 ## Description
 
-**GenAI Executer** extends the capabilities of `genai_tasker` by adding functionality to:
+**Executer** wraps `TaskExecutor` from the `tasker` module to provide:
 
-1. Generate Python code from natural language instructions
+1. Generate Python code from natural language instructions using J2 templates
 2. Execute the generated code in a controlled, secure environment
 3. Capture and return execution results
 4. Save execution history (code and results) to the `executions/` directory
+
+## Architecture
+
+`CodeExecuter` is a high-level wrapper that integrates:
+
+- **TaskExecutor** (from `tasker`): Handles AI provider connections and content generation
+- **TaskPromptBuilder** (from `tasker`): Builds prompts using Jinja2 templates
+- **code_executer.j2** template: Defines system and user prompts for code generation
+
+This design follows the single responsibility principle - AI operations are delegated to `tasker`, while `executer` focuses on code execution and security.
 
 ## Security Modes
 
@@ -32,7 +42,7 @@ Allows all operations without restrictions. **Use with caution** - only enable w
 
 ## Installation
 
-The module uses the same infrastructure as `genai_tasker`. Ensure dependencies are installed:
+The module uses the same infrastructure as `tasker`. Ensure dependencies are installed:
 
 ```bash
 pip install google-genai openai httpx keyring
@@ -40,38 +50,14 @@ pip install google-genai openai httpx keyring
 
 ## Configuration
 
-### API Keys
+For API keys configuration, see [main README Configuration section](../../README.md#configuration).
 
-API keys are resolved in this order:
+### Using config.json (Execution Settings Only)
 
-| Priority | Method | Description |
-|----------|--------|-------------|
-| 1st | Argument | `CodeExecuter(api_key="...")` |
-| 2nd | OS Keyring | `keyring.get_password(provider, "api_key")` |
-| 3rd | Key Files | `{provider}_api_key.txt` or `apikey.txt` |
-
-**Recommended: Use OS Keyring (Most Secure)**
-
-```python
-import keyring
-
-# Store API key (one-time setup)
-keyring.set_password("gemini", "api_key", "your-api-key")
-```
-
-> **Auto-Migration**: Keys found in files are automatically saved to keyring for future use.
-
-### Using config.json (Recommended)
-
-Create or edit `config.json` in the `genai_executer/` directory:
+Create or edit `config.json` in the `executer/` directory for execution-related settings:
 
 ```json
 {
-  "genai": {
-    "provider": "gemini",
-    "model": "gemini-3-flash-preview",
-    "temperature": 0.1
-  },
   "execution": {
     "mode": "subprocess",
     "security": "safe",
@@ -82,34 +68,37 @@ Create or edit `config.json` in the `genai_executer/` directory:
 }
 ```
 
-The config file is loaded automatically. You can also pass parameters directly (they take priority over config file):
+**Note**: AI settings (provider, model, temperature) are passed as constructor parameters, not in config.json. This allows flexibility to change AI provider at runtime while keeping execution behavior consistent.
 
-```python
-# Uses config.json automatically
-executer = CodeExecuter()
+### Configuration Parameters
 
-# Override specific parameters
-executer = CodeExecuter(provider="openai", model_name="gpt-4o")
-
-# Use a custom config file
-executer = CodeExecuter(config_file="path/to/my_config.json")
-```
+| Category | Parameter | Description | Default |
+|----------|-----------|-------------|---------|
+| **AI** | `provider` | AI provider (gemini, openai, groq, etc.) | gemini |
+| **AI** | `model_name` | Model to use | gemini-3-flash-preview |
+| **AI** | `api_key` | API key (resolved via tasker if None) | None |
+| **AI** | `temperature` | Sampling temperature | 0.2 |
+| **Execution** | `mode` | subprocess or exec | subprocess |
+| **Execution** | `security` | safe or permissive | safe |
+| **Execution** | `timeout` | Max execution time (seconds) | 30 |
+| **Execution** | `max_retries` | Retry attempts on failure | 2 |
+| **Execution** | `save_executions` | Save to executions/ | true |
 
 ## Basic Usage
 
 ### Simple Example (SAFE mode - default)
 
 ```python
-from genai_executer import CodeExecuter, SecurityMode
+from nono.executer import CodeExecuter, SecurityMode
 
-# Initialize the executor (uses config.json by default)
-executer = CodeExecuter()
-
-# Or pass parameters directly (override config)
+# Initialize with AI provider settings
 executer = CodeExecuter(
     provider="gemini",
-    model_name="gemini-2.0-flash"
+    model_name="gemini-3-flash-preview"
 )
+
+# Or use defaults (gemini, gemini-3-flash-preview)
+executer = CodeExecuter()
 
 # Generate and execute code
 result = executer.run(
@@ -121,16 +110,17 @@ print(f"Success: {result.success}")
 print(f"Output: {result.output}")
 print(f"Generated code:\n{result.code}")
 ```
+```
 
 ### Using PERMISSIVE Mode
 
 ```python
-from genai_executer import CodeExecuter, SecurityMode
+from nono.executer import CodeExecuter, SecurityMode
 
 # Initialize with PERMISSIVE mode (allows dangerous operations)
 executer = CodeExecuter(
     provider="gemini",
-    model_name="gemini-2.0-flash",
+    model_name="gemini-3-flash-preview",
     security_mode=SecurityMode.PERMISSIVE
 )
 
@@ -163,36 +153,46 @@ executer.clear_executions()
 ## Module Structure
 
 ```
-genai_executer/
+executer/
 ├── __init__.py              # Module exports
 ├── genai_executer.py        # Main CodeExecuter class
+├── config.json              # Execution settings only
 ├── README.md                # This documentation
-├── executions/              # Saved execution history
-│   └── YYYYMMDD_HHMMSS_execid_OK.json  # Execution data + code
-└── examples/                # Usage examples
-    ├── calculator_example.py
-    └── file_lister_example.py
+└── executions/              # Saved execution history
+    └── YYYYMMDD_HHMMSS_execid_OK.json  # Execution data + code
+```
+
+**Related files in tasker/:**
+```
+tasker/templates/
+└── python_programming.j2    # J2 template for code generation prompts
 ```
 
 ## Main Classes
 
 ### `CodeExecuter`
 
-Main class for code generation and execution.
+Main class for code generation and execution. Wraps `TaskExecutor` for AI operations.
 
 **Initialization Parameters:**
 
-- `config_file`: Path to configuration file (TOML or JSON)
-- `provider`: AI provider ("gemini", "openai", "perplexity", "ollama")
-- `model_name`: Model name to use
-- `api_key`: API key for the provider
+- `config_file`: Path to execution config file (JSON)
+- `provider`: AI provider ("gemini", "openai", "groq", "openrouter", etc.) - default: "gemini"
+- `model_name`: Model name to use - default: "gemini-3-flash-preview"
+- `api_key`: API key (if None, resolved via tasker/connector)
+- `temperature`: Sampling temperature for code generation - default: 0.2
 - `execution_mode`: Execution method (`SUBPROCESS` or `EXEC`)
 - `security_mode`: Security level (`SAFE` or `PERMISSIVE`)
+
+**Key Attributes:**
+
+- `tasker`: `TaskExecutor` instance for AI operations
+- `prompt_builder`: `TaskPromptBuilder` for J2 template rendering
 
 **Main Methods:**
 
 - `run(instruction, context, timeout, save_execution)`: Generate and execute code
-- `generate_code(instruction, context)`: Generate code only
+- `generate_code(instruction, context, previous_error)`: Generate code only (uses J2 template)
 - `execute_code(code, timeout)`: Execute code only
 - `set_security_mode(mode)`: Change security mode at runtime
 - `list_executions(limit)`: List saved executions
@@ -238,7 +238,7 @@ Enum for security levels.
 - Useful for trusted code
 
 ```python
-from genai_executer import CodeExecuter, ExecutionMode
+from nono.executer import CodeExecuter, ExecutionMode
 
 # Subprocess mode (recommended)
 executer = CodeExecuter(execution_mode=ExecutionMode.SUBPROCESS)
@@ -389,8 +389,25 @@ If generated code fails, the LLM receives the error and generates a corrected ve
 | Dynamic Code | `eval()`, `exec()`, `compile()`             |
 | Process      | `os.fork`, `multiprocessing.*`                |
 
+---
 
-## Credits
+## Dependencies
 
-**Author:** DatamanEdge
-**License:** MIT
+| Package | Version | Description |
+|---------|---------|-------------|
+| `google-genai` | >= 1.0.0 | Google Gemini SDK ([docs](https://ai.google.dev/gemini-api/docs)) |
+| `requests` | >= 2.28.0 | HTTP library for API calls |
+
+---
+
+## Contact
+
+- **Author**: [DatamanEdge](https://github.com/DatamanEdge)
+- **Email**: [jrodriguezga@outlook.com](mailto:jrodriguezga@outlook.com)
+- **LinkedIn**: [Javier Rodríguez](https://es.linkedin.com/in/javier-rodriguez-ga)
+
+---
+
+## License
+
+MIT © 2026 DatamanEdge. See [LICENSE](../../LICENSE).

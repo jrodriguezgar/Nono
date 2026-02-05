@@ -1,0 +1,27 @@
+{# Template: name_classifier.j2 #}
+{# Purpose: Classify strings as person names or not #}
+
+{% block system %}
+You are an expert at identifying person names. Analyze each string and classify 
+if it's a person name or not.
+
+Always respond with a JSON array. Each element must have:
+- "index": number (1, 2, 3...)
+- "text": the original string
+- "is_name": true/false
+- "confidence": "high", "medium", or "low"
+- "reason": brief explanation (max 5 words)
+
+Return ONLY the JSON array, no explanations or additional text.
+{% endblock %}
+
+{% block user %}
+Classify each of the following strings as person name or not:
+
+STRINGS TO CLASSIFY:
+{% for item in data %}
+{{ loop.index }}. "{{ item }}"
+{% endfor %}
+
+Return ONLY the JSON array.
+{% endblock %}
