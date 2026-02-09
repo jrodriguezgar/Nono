@@ -1,0 +1,343 @@
+# Nono - No Overhead, Neural Operations
+
+Unified AI-powered framework for executing tasks using Generative AI with multi-provider support.
+
+## Context
+
+Nono is a modular Python framework that provides a unified interface for interacting with multiple LLM providers (Google Gemini, OpenAI, Perplexity, DeepSeek, Grok, Ollama). It enables task-based execution with JSON prompt definitions, code generation, batch data processing, and structured outputs with schema validation.
+
+Primary goals:
+- Provider-agnostic AI interactions
+- Reusable task definitions via JSON/Jinja2 templates
+- Token-efficient batch processing
+- Secure code generation and execution
+- Enterprise-ready with SSL flexibility and rate limiting
+
+## Tech Stack
+
+| Component | Technology | Version |
+|-----------|------------|---------|
+| Language | Python | >= 3.11 |
+| AI SDK (Google) | google-generativeai | >= 0.8.0 |
+| AI SDK (OpenAI) | openai | >= 1.0.0 |
+| HTTP Client | requests | >= 2.28.0 |
+| Validation | pydantic | >= 2.0.0 |
+| Templates | jinja2 | >= 3.0.0 |
+| TOML Parser | tomli/tomllib | built-in 3.11+ |
+| Build System | hatchling | latest |
+
+## Project Structure
+
+```
+Nono/
+├── nono/                       # Main package
+│   ├── cli.py                  # Command-line interface
+│   ├── config.py               # Unified configuration management
+│   ├── config.toml             # Default configuration file
+│   │
+│   ├── connector/              # Low-level AI provider connectors
+│   │   ├── connector_genai.py  # Multi-provider client (Gemini, OpenAI, etc.)
+│   │   ├── api_manager.py      # API key management with keyring
+│   │   └── genai_batch_processing.py  # Batch processing utilities
+│   │
+│   ├── tasker/                 # Task execution framework
+│   │   ├── genai_tasker.py     # TaskExecutor class
+│   │   ├── jinja_prompt_builder.py  # Jinja2 template integration
+│   │   ├── prompts/            # JSON task definitions
+│   │   └── templates/          # Jinja2 prompt templates
+│   │
+│   ├── executer/               # Code generation & execution
+│   │   ├── genai_executer.py   # CodeExecuter with security controls
+│   │   └── config.json         # Execution configuration
+│   │
+│   └── examples/               # Usage examples
+│       ├── cli_example.py
+│       └── config_example.py
+│
+├── pyproject.toml              # Project metadata and dependencies
+├── main.py                     # Entry point
+└── README.md                   # Main documentation
+```
+
+## Configuration
+
+### Priority Resolution (highest to lowest)
+
+1. **CLI Arguments** - `--provider gemini --model gpt-4o`
+2. **Environment Variables** - `NONO_GOOGLE__DEFAULT_MODEL`
+3. **Config File** - `config.toml` or custom file
+4. **Default Values** - Programmatic defaults
+
+### Key Environment Variables
+
+```bash
+# Provider configuration (use __ for nested keys)
+NONO_GOOGLE__DEFAULT_MODEL="gemini-3-flash-preview"
+NONO_RATE_LIMITS__DELAY_BETWEEN_REQUESTS="0.5"
+
+# Path configuration (legacy API)
+NONO_TEMPLATES_DIR="/path/to/templates"
+NONO_PROMPTS_DIR="/path/to/prompts"
+NONO_CONFIG_FILE="/path/to/config.toml"
+
+# API Keys
+GOOGLE_API_KEY="your-key"
+OPENAI_API_KEY="your-key"
+```
+
+### config.toml Structure
+
+```toml
+[google]
+default_model = "gemini-3-flash-preview"
+
+[openai]
+default_model = "gpt-4o-mini"
+
+[ollama]
+host = "http://localhost:11434"
+default_model = "llama3"
+
+[rate_limits]
+delay_between_requests = 0.5
+
+[paths]
+templates_dir = ""
+prompts_dir = ""
+```
+
+## CLI Interface
+
+### Entry Point
+
+```bash
+python -m nono.cli [options]
+```
+
+### Main Arguments
+
+| Argument | Description |
+|----------|-------------|
+| `--provider`, `-p` | AI provider: gemini, openai, perplexity, deepseek, grok, ollama |
+| `--model`, `-m` | Model name (uses provider default if omitted) |
+| `--prompt` | Direct prompt text |
+| `--task`, `-t` | Task name or JSON file path |
+| `--input`, `-i` | Input file |
+| `--output`, `-o` | Output file |
+| `--dry-run` | Simulate without API calls |
+| `--verbose`, `-v` | Increase verbosity (-v=INFO, -vv=DEBUG) |
+| `@params.txt` | Load arguments from file |
+
+### Examples
+
+```bash
+# Direct prompt execution
+python -m nono.cli --provider gemini --prompt "Explain Python decorators"
+
+# Task-based execution
+python -m nono.cli --provider openai --task summarize -i document.txt -o summary.json
+
+# Dry-run mode
+python -m nono.cli --dry-run --provider gemini --prompt "Test" -v
+
+# Parameters from file
+python -m nono.cli @production_params.txt
+```
+
+## Functions & Public API
+
+### Config Module (`nono.config`)
+
+```python
+from nono.config import Config, load_config, ConfigSchema
+
+# Quick load
+config = load_config(filepath='config.toml', env_prefix='NONO_')
+
+# Method chaining
+config = Config(defaults={'timeout': 30}).load_file('config.toml').load_env('NONO_')
+
+# Access values
+model = config['google.default_model']
+delay = config.get('rate_limits.delay', type=float)
+
+# Validation
+schema = ConfigSchema()
+schema.add_field('google.default_model', required=True)
+config.validate()
+
+# Legacy API
+from nono.config import NonoConfig, get_templates_dir, set_prompts_dir
+```
+
+### CLI Module (`nono.cli`)
+
+```python
+from nono.cli import (
+    CLIBase, create_cli,
+    print_success, print_error, print_warning, print_info,
+    print_table, print_progress, print_summary, confirm_action
+)
+
+# Factory function
+cli = create_cli(prog="tool", version="1.0.0", with_provider=True)
+cli.add_examples(["%(prog)s --provider gemini --prompt 'Hello'"])
+args = cli.parse_args()
+
+# Statistics tracking
+cli.increment_stat('processed', 100)
+cli.print_final_summary()
+```
+
+### Connector Module (`nono.connector`)
+
+```python
+from nono.connector import GeminiService, OpenAIService, OllamaService
+
+# Initialize client
+client = GeminiService(model_name="gemini-3-flash-preview")
+
+# Generate completion
+response = client.generate_completion(
+    messages=[{"role": "user", "content": "Hello!"}],
+    temperature=0.7,
+    max_tokens=4096
+)
+
+# SSL configuration
+from nono.connector import configure_ssl_verification, SSLVerificationMode
+configure_ssl_verification(SSLVerificationMode.CERTIFI)
+```
+
+### Tasker Module (`nono.tasker`)
+
+```python
+from nono.tasker import TaskExecutor, build_from_file_blocks
+
+# Task execution
+executor = TaskExecutor(provider="gemini")
+result = executor.execute_task(
+    task_name="name_classifier",
+    input_data={"name": "María García"}
+)
+
+# Template-based prompts
+prompts = build_from_file_blocks(
+    "data_loss_prevention.j2",
+    text="John Smith, SSN: 123-45-6789",
+    compliance="GDPR"
+)
+```
+
+### Executer Module (`nono.executer`)
+
+```python
+from nono.executer import CodeExecuter
+
+executer = CodeExecuter()
+result = executer.run("Calculate factorial of 10")
+print(result.output)  # 3628800
+print(result.code)    # Generated Python code
+```
+
+## Development Workflow
+
+### Installation
+
+```bash
+# Clone repository
+git clone https://github.com/DatamanEdge/Nono.git
+cd Nono
+
+# Create virtual environment
+python -m venv .venv
+.venv\Scripts\activate  # Windows
+source .venv/bin/activate  # Linux/Mac
+
+# Install dependencies
+pip install -e .
+
+# For Python < 3.11, install TOML parser
+pip install tomli
+```
+
+### Running
+
+```bash
+# CLI execution
+python -m nono.cli --help
+
+# Run examples
+python -m nono.examples.cli_example
+python -m nono.examples.config_example
+```
+
+### Testing
+
+```bash
+# Run tests (when available)
+pytest tests/
+
+# Type checking
+mypy nono/
+```
+
+## Technical Rules & Conventions
+
+### Code Style
+- **PEP 8** compliant
+- **Type hints** on all public functions
+- **Google Docstrings** format
+- English for code, Spanish for user documentation
+
+### Architecture Patterns
+- **SOLID principles** throughout
+- **Abstract base classes** for providers (`BaseAIClient`, `BaseService`)
+- **Factory pattern** for CLI and config creation
+- **Method chaining** for fluent APIs
+- **Instance-based design** for testability (not singletons)
+
+### Naming Conventions
+- `snake_case` for functions, variables, modules
+- `PascalCase` for classes
+- `UPPER_CASE` for constants
+- Prefix private methods with `_`
+
+### Error Handling
+- Return `(success: bool, errors: List[str])` tuples for validation
+- Use `ValueError` for configuration errors
+- Log with `logging` module using `msg_log()` or `@event_log` decorator
+
+### File Organization
+- JSON task definitions in `tasker/prompts/`
+- Jinja2 templates in `tasker/templates/`
+- Examples in `examples/`
+- Documentation as `README_*.md` in module directories
+
+## Key Endpoints/Files
+
+| File | Purpose |
+|------|---------|
+| `nono/cli.py` | Main CLI entry point and utilities |
+| `nono/config.py` | Unified configuration management |
+| `nono/connector/connector_genai.py` | Multi-provider AI client |
+| `nono/tasker/genai_tasker.py` | Task execution framework |
+| `nono/executer/genai_executer.py` | Code generation and execution |
+| `nono/config.toml` | Default configuration |
+| `nono/tasker/templates/*.j2` | Prompt templates (DLP, spell correction, etc.) |
+| `nono/tasker/prompts/*.json` | Task definitions |
+
+## Supported AI Providers
+
+| Provider | Environment Key | Default Model |
+|----------|-----------------|---------------|
+| Google Gemini | `GOOGLE_API_KEY` | gemini-3-flash-preview |
+| OpenAI | `OPENAI_API_KEY` | gpt-4o-mini |
+| Perplexity | `PERPLEXITY_API_KEY` | sonar |
+| DeepSeek | `DEEPSEEK_API_KEY` | deepseek-chat |
+| Grok (xAI) | `GROK_API_KEY` | grok-1 |
+| Ollama | (local) | llama3 |
+
+---
+
+*Generated for LLM context. See README.md for full documentation.*

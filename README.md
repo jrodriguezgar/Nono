@@ -147,7 +147,51 @@ print(result.output)  # 3628800
 
 ---
 
-### 📊 Data Operations (Templates)
+### �️ CLI
+
+Command-line interface for executing AI tasks with multi-provider support, colored output, and progress indicators.
+
+```bash
+# Execute with prompt
+python -m nono.cli --provider gemini --prompt "Explain quantum computing"
+
+# Dry-run mode
+python -m nono.cli --dry-run --provider openai --task summarize -i doc.txt
+
+# Load parameters from file
+python -m nono.cli @params.txt
+```
+
+📖 [CLI Documentation](nono/README_cli.md)
+
+---
+
+### ⚙️ Config
+
+Unified configuration management with multi-source priority resolution.
+
+```python
+from nono.config import Config, load_config
+
+# Quick setup with method chaining
+config = load_config(filepath='config.toml', env_prefix='NONO_')
+
+# Access values
+model = config['google.default_model']
+delay = config.get('rate_limits.delay_between_requests', type=float)
+
+# Schema validation
+from nono.config import ConfigSchema
+schema = ConfigSchema()
+schema.add_field('google.default_model', required=True)
+config.validate()
+```
+
+📖 [Configuration Documentation](nono/README_config.md)
+
+---
+
+### �📊 Data Operations (Templates)
 
 Token-efficient batch operations using Jinja2 templates.
 
@@ -581,47 +625,63 @@ names = ["María García", "Tokyo", "Microsoft", "Amazon River", "Albert Einstei
 
 ## Configuration
 
-### Paths Configuration
+Nono provides a unified configuration system with multi-source priority resolution.
 
-Configure custom directories for templates and prompts. Useful when using Nono as a library from other projects.
+📖 **Full documentation**: [Configuration Guide](nono/README_config.md)
 
-#### Resolution Priority
-
-| Priority | Method | Description |
-|----------|--------|-------------|
-| 1st | Environment variables | `NONO_TEMPLATES_DIR`, `NONO_PROMPTS_DIR` |
-| 2nd | Programmatic | `set_templates_dir()`, `set_prompts_dir()` |
-| 3rd | config.toml | `[paths]` section in configuration file |
-| 4th | Default | `nono/tasker/templates`, `nono/tasker/prompts` |
-
-#### Environment Variables
-
-```bash
-# Set custom directories (highest priority)
-export NONO_TEMPLATES_DIR="/path/to/my/templates"
-export NONO_PROMPTS_DIR="/path/to/my/prompts"
-export NONO_CONFIG_FILE="/path/to/custom/config.toml"
-```
-
-#### Programmatic Configuration
+### Quick Start
 
 ```python
-from nono.config import NonoConfig, set_templates_dir, set_prompts_dir
+from nono.config import Config, load_config
+
+# Quick setup
+config = load_config(filepath='config.toml', env_prefix='NONO_')
+
+# Access values with dot notation
+model = config['google.default_model']
+delay = config.get('rate_limits.delay_between_requests', type=float)
+
+# Method chaining
+config = (
+    Config(defaults={'timeout': 30})
+    .load_file('config.toml')
+    .load_env(prefix='NONO_')
+)
+```
+
+### Resolution Priority
+
+| Priority | Source | Method |
+|----------|--------|--------|
+| 1st (Highest) | Arguments | `load_args()` / `set()` |
+| 2nd | Environment | `load_env(prefix='NONO_')` |
+| 3rd | File | `load_file('config.toml')` |
+| 4th (Lowest) | Defaults | `Config(defaults={...})` |
+
+### Environment Variables
+
+```bash
+# General config
+export NONO_GOOGLE__DEFAULT_MODEL="gemini-3-flash-preview"
+export NONO_RATE_LIMITS__DELAY_BETWEEN_REQUESTS="0.5"
+
+# Path config (legacy API)
+export NONO_TEMPLATES_DIR="/path/to/my/templates"
+export NONO_PROMPTS_DIR="/path/to/my/prompts"
+```
+
+> **Note**: Use double underscore (`__`) for nested keys.
+
+### Legacy API (Backwards Compatible)
+
+```python
+from nono.config import NonoConfig, set_templates_dir, get_prompts_dir
 
 # Set directories programmatically
 set_templates_dir("/path/to/my/templates")
-set_prompts_dir("/path/to/my/prompts")
 
-# Or use the class directly
-NonoConfig.set_templates_dir("/path/to/my/templates")
-NonoConfig.set_prompts_dir("/path/to/my/prompts")
-
-# Load a custom config file
-NonoConfig.load_from_file("/path/to/my/config.toml")
-
-# Get current configuration
-config = NonoConfig.get_all_config()
-print(config)
+# Get values from TOML
+model = NonoConfig.get_config_value('google', 'default_model')
 ```
 
 #### config.toml Configuration
@@ -693,11 +753,14 @@ configure_ssl_verification(SSLVerificationMode.INSECURE)
 Nono/
 ├── LICENSE
 ├── README.md
-├── main.py                     # CLI entry point
+├── main.py                     # Entry point
 └── nono/
     ├── __init__.py
-    ├── config.py               # Central configuration module
+    ├── cli.py                  # Command-line interface
+    ├── config.py               # Unified configuration module
     ├── config.toml             # Provider and paths configuration
+    ├── README_cli.md           # CLI documentation
+    ├── README_config.md        # Configuration documentation
     ├── connector/              # Low-level AI connectors
     │   ├── connector_genai.py
     │   └── README_connector_genai.md
@@ -725,7 +788,8 @@ Nono/
 
 | Document                                                    | Description                     |
 | ----------------------------------------------------------- | ------------------------------- |
-| [Configuration](nono/config.py)                                | Central configuration module    |
+| [CLI Guide](nono/README_cli.md)                                | Command-line interface usage    |
+| [Configuration Guide](nono/README_config.md)                   | Configuration module reference  |
 | [Connector Guide](nono/connector/README_connector_genai.md)    | Low-level AI provider interface |
 | [Tasker](nono/tasker/README.md)                                | Task-based execution framework  |
 | [Task Configuration](nono/tasker/README_task_configuration.md) | JSON prompt definition guide    |
