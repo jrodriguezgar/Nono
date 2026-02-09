@@ -219,13 +219,8 @@ def run_task(task_path: str, data: str) -> None:
         sys.exit(1)
 
 
-def interactive_mode() -> None:
-    """Run in interactive mode."""
-    print(f"\n{'=' * 60}")
-    print(f"  Nono GenAI Tasker v{__version__}")
-    print(f"  Interactive Mode")
-    print(f"{'=' * 60}")
-    
+def show_menu() -> None:
+    """Display the interactive menu options."""
     print("\nOptions:")
     print("  1. Run a simple prompt")
     print("  2. Run a task from file")
@@ -234,6 +229,16 @@ def interactive_mode() -> None:
     print("  5. List tasks")
     print("  6. Show configuration")
     print("  q. Quit")
+
+
+def interactive_mode() -> None:
+    """Run in interactive mode."""
+    print(f"\n{'=' * 60}")
+    print(f"  Nono GenAI Tasker v{__version__}")
+    print(f"  Interactive Mode")
+    print(f"{'=' * 60}")
+    
+    show_menu()
     
     while True:
         choice = input("\n> Select option (1-6, q): ").strip().lower()
@@ -247,22 +252,29 @@ def interactive_mode() -> None:
             prompt = input("  Prompt: ").strip()
             if prompt:
                 run_simple_prompt(provider, model, prompt)
+            show_menu()
         elif choice == "2":
             list_tasks()
             task = input("  Task file: ").strip()
             data = input("  Data (comma-separated or JSON array): ").strip()
             if task and data:
                 run_task(task, data)
+            show_menu()
         elif choice == "3":
             list_providers()
+            show_menu()
         elif choice == "4":
             list_templates()
+            show_menu()
         elif choice == "5":
             list_tasks()
+            show_menu()
         elif choice == "6":
             show_config()
+            show_menu()
         else:
             print("  Invalid option. Try again.")
+            show_menu()
 
 
 def main() -> None:
