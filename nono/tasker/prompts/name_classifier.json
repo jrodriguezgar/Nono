@@ -1,0 +1,51 @@
+{
+    "task": {
+        "name": "name_classifier",
+        "description": "Classifies strings as person names or other types (organization, location, etc.)",
+        "version": "1.0.0"
+    },
+    "genai": {
+        "provider": "gemini",
+        "model": "gemini-2.0-flash",
+        "temperature": "data_cleaning",
+        "max_tokens": 4096,
+        "batch_size": 100,
+        "response_format": "json"
+    },
+    "prompts": {
+        "system": "You are an expert at identifying person names across multiple cultures and languages. Your task is to analyze strings and classify them as person names or non-person entities (organizations, locations, product names, etc.).\n\nAnalyze each string carefully considering:\n- Name patterns from various cultures (Spanish, English, Asian, etc.)\n- Common person name prefixes and suffixes\n- Organization indicators (S.L., S.A., Corp., Ltd., etc.)\n- Location patterns (city names, country names)\n\nAlways respond with a valid JSON object. The response MUST be a JSON object with a 'results' array.",
+        "user": "Classify each of the following strings. Determine if each one is a person's name.\n\nSTRINGS TO CLASSIFY:\n{data_input_json}\n\nReturn a JSON object with this exact structure:\n{\n  \"results\": [\n    {\n      \"analyzed_string\": \"<original string>\",\n      \"is_person\": true/false,\n      \"confidence\": \"high\"|\"medium\"|\"low\",\n      \"reasoning\": \"brief explanation\"\n    }\n  ]\n}\n\nIMPORTANT: Return ONLY the JSON object, no additional text or markdown formatting."
+    },
+    "output_schema": {
+        "type": "object",
+        "required": ["results"],
+        "properties": {
+            "results": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": ["analyzed_string", "is_person"],
+                    "properties": {
+                        "analyzed_string": {
+                            "type": "string",
+                            "description": "The original string that was analyzed"
+                        },
+                        "is_person": {
+                            "type": "boolean",
+                            "description": "True if the string is a person's name, false otherwise"
+                        },
+                        "confidence": {
+                            "type": "string",
+                            "enum": ["high", "medium", "low"],
+                            "description": "Confidence level of the classification"
+                        },
+                        "reasoning": {
+                            "type": "string",
+                            "description": "Brief explanation for the classification decision"
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

@@ -581,6 +581,62 @@ names = ["María García", "Tokyo", "Microsoft", "Amazon River", "Albert Einstei
 
 ## Configuration
 
+### Paths Configuration
+
+Configure custom directories for templates and prompts. Useful when using Nono as a library from other projects.
+
+#### Resolution Priority
+
+| Priority | Method | Description |
+|----------|--------|-------------|
+| 1st | Environment variables | `NONO_TEMPLATES_DIR`, `NONO_PROMPTS_DIR` |
+| 2nd | Programmatic | `set_templates_dir()`, `set_prompts_dir()` |
+| 3rd | config.toml | `[paths]` section in configuration file |
+| 4th | Default | `nono/tasker/templates`, `nono/tasker/prompts` |
+
+#### Environment Variables
+
+```bash
+# Set custom directories (highest priority)
+export NONO_TEMPLATES_DIR="/path/to/my/templates"
+export NONO_PROMPTS_DIR="/path/to/my/prompts"
+export NONO_CONFIG_FILE="/path/to/custom/config.toml"
+```
+
+#### Programmatic Configuration
+
+```python
+from nono.config import NonoConfig, set_templates_dir, set_prompts_dir
+
+# Set directories programmatically
+set_templates_dir("/path/to/my/templates")
+set_prompts_dir("/path/to/my/prompts")
+
+# Or use the class directly
+NonoConfig.set_templates_dir("/path/to/my/templates")
+NonoConfig.set_prompts_dir("/path/to/my/prompts")
+
+# Load a custom config file
+NonoConfig.load_from_file("/path/to/my/config.toml")
+
+# Get current configuration
+config = NonoConfig.get_all_config()
+print(config)
+```
+
+#### config.toml Configuration
+
+```toml
+[paths]
+# Relative paths are resolved from project root
+templates_dir = "my_templates"
+prompts_dir = "my_prompts"
+
+# Or use absolute paths
+# templates_dir = "/absolute/path/to/templates"
+# prompts_dir = "/absolute/path/to/prompts"
+```
+
 ### API Keys
 
 API keys are resolved in this order:
@@ -637,10 +693,11 @@ configure_ssl_verification(SSLVerificationMode.INSECURE)
 Nono/
 ├── LICENSE
 ├── README.md
+├── main.py                     # CLI entry point
 └── nono/
     ├── __init__.py
-    ├── apikey.txt              # API key storage
-    ├── config.toml             # Provider configuration
+    ├── config.py               # Central configuration module
+    ├── config.toml             # Provider and paths configuration
     ├── connector/              # Low-level AI connectors
     │   ├── connector_genai.py
     │   └── README_connector_genai.md
@@ -668,6 +725,7 @@ Nono/
 
 | Document                                                    | Description                     |
 | ----------------------------------------------------------- | ------------------------------- |
+| [Configuration](nono/config.py)                                | Central configuration module    |
 | [Connector Guide](nono/connector/README_connector_genai.md)    | Low-level AI provider interface |
 | [Tasker](nono/tasker/README.md)                                | Task-based execution framework  |
 | [Task Configuration](nono/tasker/README_task_configuration.md) | JSON prompt definition guide    |
