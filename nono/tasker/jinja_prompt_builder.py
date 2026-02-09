@@ -20,13 +20,22 @@ from typing import Any, Dict, List, Optional, Union, Callable
 
 from jinjapromptpy import PromptGenerator, PromptTemplate, BatchResult, RenderResult
 
+# Import central configuration
+from ..config import NonoConfig
+
 logger = logging.getLogger("GenAITaskExecutor.PromptBuilder")
 
 
 # ============================================================================
-# Default Templates Directory
+# Default Templates Directory (now uses central config)
 # ============================================================================
 
+def get_templates_dir() -> Path:
+    """Get templates directory from central configuration."""
+    return NonoConfig.get_templates_dir()
+
+
+# For backward compatibility
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 
 
@@ -36,6 +45,7 @@ TEMPLATES_DIR = Path(__file__).parent / "templates"
 
 def to_compact_json(value: Any) -> str:
     """Convert value to compact JSON string (no whitespace)."""
+    return json.dumps(value, ensure_ascii=False, separators=(',', ':'))
     return json.dumps(value, ensure_ascii=False, separators=(',', ':'))
 
 
@@ -124,13 +134,20 @@ class TaskPromptBuilder:
         Initialize the TaskPromptBuilder.
         
         Args:
-            templates_dir: Directory containing template files. Defaults to built-in templates.
+            templates_dir: Directory containing template files. 
+                          If None, uses central config (NonoConfig.get_templates_dir()).
+                          Can be set via NONO_TEMPLATES_DIR env var or programmatically.
             custom_filters: Additional custom Jinja2 filters.
             token_counter: Custom function to count tokens in a string.
             default_max_tokens: Default maximum tokens per prompt.
             overlap_items: Number of items to overlap between batches.
         """
-        self._templates_dir = Path(templates_dir) if templates_dir else TEMPLATES_DIR
+        # Use provided path, or resolve from central config
+        if templates_dir:
+            self._templates_dir = Path(templates_dir)
+        else:
+            self._templates_dir = get_templates_dir()
+        
         self._custom_filters = {**DEFAULT_FILTERS, **(custom_filters or {})}
         self._token_counter = token_counter
         self._default_max_tokens = default_max_tokens

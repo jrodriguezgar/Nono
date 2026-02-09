@@ -1,0 +1,46 @@
+{
+    "task": {
+        "name": "task_name",
+        "description": "Brief description of what this task does",
+        "version": "1.0.0"
+    },
+    "genai": {
+        "provider": "gemini",
+        "model": "gemini-3-flash-preview",
+        "temperature": "balanced",
+        "max_tokens": 4096,
+        "batch_size": 50,
+        "response_format": "json"
+    },
+    "prompts": {
+        "system": "You are an expert assistant. Define your role and expertise here.\n\nProvide clear instructions about:\n- What the model should do\n- How it should analyze the input\n- What format the response should follow\n\nAlways respond with a valid JSON object.",
+        "user": "Process the following data:\n\n{data_input_json}\n\nReturn a JSON object with this exact structure:\n{\n  \"results\": [\n    {\n      \"input\": \"<original input>\",\n      \"output\": \"<processed result>\",\n      \"metadata\": {}\n    }\n  ]\n}\n\nIMPORTANT: Return ONLY the JSON object, no additional text or markdown formatting."
+    },
+    "output_schema": {
+        "type": "object",
+        "required": ["results"],
+        "properties": {
+            "results": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": ["input", "output"],
+                    "properties": {
+                        "input": {
+                            "type": "string",
+                            "description": "The original input that was processed"
+                        },
+                        "output": {
+                            "type": "string",
+                            "description": "The processed result"
+                        },
+                        "metadata": {
+                            "type": "object",
+                            "description": "Additional metadata about the processing"
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

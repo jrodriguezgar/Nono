@@ -21,3 +21,12 @@ default_model = "llama3"
 
 [rate_limits]
 delay_between_requests = 0.5
+
+[paths]
+# Directory containing Jinja2 templates (.j2 files)
+# If relative, resolved from project root. Leave empty for default (nono/tasker/templates)
+templates_dir = ""
+
+# Directory containing task definition files (.json)
+# If relative, resolved from project root. Leave empty for default (nono/tasker/prompts)
+prompts_dir = ""
