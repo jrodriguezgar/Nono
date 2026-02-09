@@ -6,7 +6,7 @@
     },
     "genai": {
         "provider": "gemini",
-        "model": "gemini-2.0-flash",
+        "model": "gemini-3-flash-preview",
         "temperature": "data_cleaning",
         "max_tokens": 4096,
         "batch_size": 100,
