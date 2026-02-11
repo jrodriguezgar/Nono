@@ -1,51 +1,51 @@
-# API Manager - Documentación
+# API Manager - Documentation
 
-Módulo profesional para gestión integral de APIs con rate limiting, circuit breaker, reintentos y métricas.
+Professional module for comprehensive API management with rate limiting, circuit breaker, retries, and metrics.
 
-## 📋 Índice
+## 📋 Table of Contents
 
-- [Características](#características)
-- [Instalación](#instalación)
-- [Migración desde api_rate_limiter](#migración-desde-api_rate_limiter)
-- [Uso Rápido](#uso-rápido)
+- [Features](#features)
+- [Installation](#installation)
+- [Migration from api_rate_limiter](#migration-from-api_rate_limiter)
+- [Quick Start](#quick-start)
 - [API Manager](#api-manager)
 - [Rate Limiting](#rate-limiting)
 - [Circuit Breaker](#circuit-breaker)
-- [Políticas de Reintentos](#políticas-de-reintentos)
-- [Métricas](#métricas)
-- [Decoradores](#decoradores)
-- [Presets de Proveedores](#presets-de-proveedores)
+- [Retry Policies](#retry-policies)
+- [Metrics](#metrics)
+- [Decorators](#decorators)
+- [Provider Presets](#provider-presets)
 - [API Reference](#api-reference)
 
 ---
 
-## ✨ Características
+## ✨ Features
 
 ### Rate Limiting
-- **Múltiples límites simultáneos**: RPM, RPD, TPM, TPD, RPS y límites concurrentes
-- **Algoritmos configurables**: Token Bucket, Sliding Window, Fixed Window
-- **Presets para APIs de IA**: OpenAI, Gemini, Claude, Perplexity, DeepSeek, Ollama
+- **Multiple simultaneous limits**: RPM, RPD, TPM, TPD, RPS and concurrent limits
+- **Configurable algorithms**: Token Bucket, Sliding Window, Fixed Window
+- **AI API presets**: OpenAI, Gemini, Claude, Perplexity, DeepSeek, Ollama
 
 ### Circuit Breaker
-- **Patrón Circuit Breaker**: Previene cascada de fallos
-- **Estados**: Closed, Open, Half-Open
-- **Auto-recuperación**: Prueba automática de recuperación
+- **Circuit Breaker pattern**: Prevents cascading failures
+- **States**: Closed, Open, Half-Open
+- **Auto-recovery**: Automatic recovery testing
 
-### Reintentos
-- **Estrategias múltiples**: Fixed, Linear, Exponential, Fibonacci
-- **Jitter configurable**: Evita thundering herd
-- **Excepciones configurables**: Define qué errores reintentar
+### Retries
+- **Multiple strategies**: Fixed, Linear, Exponential, Fibonacci
+- **Configurable jitter**: Avoids thundering herd
+- **Configurable exceptions**: Define which errors to retry
 
-### Gestión de APIs
-- **Registro centralizado**: Gestiona múltiples APIs desde un solo punto
-- **Métricas completas**: Estadísticas de uso, latencia, errores
-- **Presets de configuración**: Configuraciones listas para proveedores conocidos
+### API Management
+- **Centralized registration**: Manage multiple APIs from a single point
+- **Complete metrics**: Usage statistics, latency, errors
+- **Configuration presets**: Ready configurations for known providers
 
 ---
 
-## 📦 Instalación
+## 📦 Installation
 
-El módulo está en el directorio `connector/`. Importar directamente:
+The module is in the `connector/` directory. Import directly:
 
 ```python
 from api_manager import (
@@ -78,52 +78,52 @@ from api_manager import (
 
 ---
 
-## 🔄 Migración desde api_rate_limiter
+## 🔄 Migration from api_rate_limiter
 
-El nuevo módulo `api_manager` es **100% compatible hacia atrás** con `api_rate_limiter`. 
-Simplemente cambia el import:
+The new `api_manager` module is **100% backward compatible** with `api_rate_limiter`. 
+Simply change the import:
 
 ```python
-# Antes
+# Before
 from api_rate_limiter import APIRateLimiter, RateLimitConfig
 
-# Ahora
+# Now
 from api_manager import APIRateLimiter, RateLimitConfig
 ```
 
-Todo el código existente seguirá funcionando sin cambios.
+All existing code will continue to work without changes.
 
 ---
 
-## 🚀 Uso Rápido
+## 🚀 Quick Start
 
-### Opción 1: API Manager (Recomendado)
+### Option 1: API Manager (Recommended)
 
 ```python
 from api_manager import APIManager, APIConfigPresets
 
-# Crear manager
+# Create manager
 manager = APIManager()
 
-# Registrar APIs con presets
+# Register APIs with presets
 manager.register_provider("openai", api_key="sk-...")
 manager.register_provider("gemini", api_key="AI...")
 
-# Usar con context manager
+# Use with context manager
 with manager.acquire("openai", tokens=1000):
     response = call_openai_api()
 
-# O versión async
+# Or async version
 async with manager.async_acquire("gemini", tokens=500):
     response = await call_gemini_api()
 ```
 
-### Opción 2: Rate Limiter Standalone
+### Option 2: Standalone Rate Limiter
 
 ```python
 from api_manager import APIRateLimiter, RateLimitConfig
 
-# Configurar límites
+# Configure limits
 config = RateLimitConfig(
     rpm=60,
     tpm=100000,
@@ -132,17 +132,17 @@ config = RateLimitConfig(
 
 limiter = APIRateLimiter(config)
 
-# Usar antes de cada llamada
+# Use before each call
 with limiter.acquire_context(tokens=500):
     response = make_api_call()
 ```
 
-### Opción 3: Usar Presets
+### Option 3: Use Presets
 
 ```python
 from api_manager import create_limiter_for_provider
 
-# Crear limitador preconfigurado
+# Create preconfigured limiter
 limiter = create_limiter_for_provider("gemini")
 ```
 
@@ -150,16 +150,16 @@ limiter = create_limiter_for_provider("gemini")
 
 ## 🏢 API Manager
 
-El `APIManager` es el punto central para gestionar múltiples APIs.
+The `APIManager` is the central point for managing multiple APIs.
 
-### Registro de APIs
+### API Registration
 
 ```python
 from api_manager import APIManager, APIConfig, RateLimitConfig
 
 manager = APIManager()
 
-# Registrar con configuración personalizada
+# Register with custom configuration
 config = APIConfig(
     base_url="https://api.example.com",
     api_key="your-key",
@@ -168,38 +168,38 @@ config = APIConfig(
 )
 manager.register_api("my-api", config)
 
-# O usar presets para proveedores conocidos
+# Or use presets for known providers
 manager.register_provider("openai", api_key="sk-...")
 manager.register_provider("gemini", api_key="AI...")
 ```
 
-### Uso con Context Manager
+### Usage with Context Manager
 
 ```python
-# El context manager gestiona automáticamente:
+# Context manager automatically handles:
 # - Rate limiting
 # - Circuit breaker
-# - Métricas
-# - Liberación de recursos
+# - Metrics
+# - Resource release
 
 with manager.acquire("openai", tokens=1000):
     response = call_api()
-    # Si hay error, se registra automáticamente
+    # If error occurs, it's automatically logged
 
-# Versión async
+# Async version
 async with manager.async_acquire("openai", tokens=1000):
     response = await async_call_api()
 ```
 
-### Obtener Estadísticas
+### Get Statistics
 
 ```python
-# Estadísticas de una API
+# Statistics for one API
 api = manager.get_api("openai")
 stats = api.get_stats()
 print(stats)
 
-# Estadísticas de todas las APIs
+# Statistics for all APIs
 all_stats = manager.get_all_stats()
 ```
 
@@ -207,50 +207,50 @@ all_stats = manager.get_all_stats()
 
 ## ⚡ Rate Limiting
 
-### Configuración de Límites
+### Limits Configuration
 
 ```python
 from api_manager import RateLimitConfig, RateLimitAlgorithm
 
 config = RateLimitConfig(
-    # Límites de solicitudes
-    rpm=60,           # 60 solicitudes por minuto
-    rpd=10000,        # 10,000 solicitudes por día
-    rps=1.0,          # 1 solicitud por segundo
+    # Request limits
+    rpm=60,           # 60 requests per minute
+    rpd=10000,        # 10,000 requests per day
+    rps=1.0,          # 1 request per second
     
-    # Límites de tokens (para APIs de IA)
-    tpm=100000,       # 100,000 tokens por minuto
-    tpd=1000000,      # 1,000,000 tokens por día
+    # Token limits (for AI APIs)
+    tpm=100000,       # 100,000 tokens per minute
+    tpd=1000000,      # 1,000,000 tokens per day
     
-    # Concurrencia
-    concurrent_limit=10,  # 10 solicitudes simultáneas
+    # Concurrency
+    concurrent_limit=10,  # 10 simultaneous requests
     
-    # Algoritmo
+    # Algorithm
     algorithm=RateLimitAlgorithm.TOKEN_BUCKET,
-    burst_size=15,    # Ráfaga máxima
+    burst_size=15,    # Maximum burst
     
-    # Comportamiento
-    max_wait_time=300.0,  # Esperar máximo 5 minutos
+    # Behavior
+    max_wait_time=300.0,  # Wait maximum 5 minutes
 )
 ```
 
-### Glosario de Límites
+### Limits Glossary
 
-| Acrónimo | Nombre | Descripción |
+| Acronym | Name | Description |
 |----------|--------|-------------|
-| **RPM** | Requests Per Minute | Solicitudes por minuto |
-| **RPD** | Requests Per Day | Solicitudes por día |
-| **RPS** | Requests Per Second | Solicitudes por segundo |
-| **TPM** | Tokens Per Minute | Tokens por minuto (APIs de IA) |
-| **TPD** | Tokens Per Day | Tokens por día |
+| **RPM** | Requests Per Minute | Requests per minute |
+| **RPD** | Requests Per Day | Requests per day |
+| **RPS** | Requests Per Second | Requests per second |
+| **TPM** | Tokens Per Minute | Tokens per minute (AI APIs) |
+| **TPD** | Tokens Per Day | Tokens per day |
 
-### Algoritmos
+### Algorithms
 
-| Algoritmo | Descripción | Mejor Para |
-|-----------|-------------|------------|
-| `TOKEN_BUCKET` | Ráfagas controladas | Uso general, APIs de IA |
-| `SLIDING_WINDOW` | Conteo preciso | Límites estrictos |
-| `FIXED_WINDOW` | Contador simple | Simplicidad, compatibilidad |
+| Algorithm | Description | Best For |
+|-----------|-------------|----------|
+| `TOKEN_BUCKET` | Controlled bursts | General use, AI APIs |
+| `SLIDING_WINDOW` | Precise counting | Strict limits |
+| `FIXED_WINDOW` | Simple counter | Simplicity, compatibility |
 
 ---
 
