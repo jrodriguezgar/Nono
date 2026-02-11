@@ -1,140 +1,140 @@
 # SSL Configuration Guide
 
-Este módulo proporciona tres opciones para configurar la verificación de certificados SSL cuando se conecta a servicios de IA generativa.
+This module provides three options for configuring SSL certificate verification when connecting to generative AI services.
 
-## Opciones Disponibles
+## Available Options
 
-### Opción 1: Modo INSECURE (Por Defecto)
+### Option 1: INSECURE Mode (Default)
 
-**⚠️ ADVERTENCIA: Solo para desarrollo/testing**
+**⚠️ WARNING: For development/testing only**
 
-Este modo deshabilita completamente la verificación SSL. Es útil para desarrollo rápido pero **NO DEBE USARSE EN PRODUCCIÓN**.
+This mode completely disables SSL verification. Useful for rapid development but **MUST NOT BE USED IN PRODUCTION**.
 
 ```python
 from fastetl.connectors.connector_genai import configure_ssl_verification, SSLVerificationMode
 
-# Ya está configurado por defecto, pero puedes llamarlo explícitamente:
+# Already configured by default, but you can call it explicitly:
 configure_ssl_verification(SSLVerificationMode.INSECURE)
 ```
 
-### Opción 2: Modo CERTIFI (Recomendado para Producción)
+### Option 2: CERTIFI Mode (Recommended for Production)
 
-**✓ RECOMENDADO para entornos de producción**
+**✓ RECOMMENDED for production environments**
 
-Este modo usa el paquete `certifi` que proporciona certificados raíz actualizados de Mozilla.
+This mode uses the `certifi` package which provides updated Mozilla root certificates.
 
 ```python
 from fastetl.connectors.connector_genai import configure_ssl_verification, SSLVerificationMode
 
-# Configurar antes de usar cualquier servicio de IA
+# Configure before using any AI service
 configure_ssl_verification(SSLVerificationMode.CERTIFI)
 ```
 
-Si `certifi` no está instalado, el módulo intentará instalarlo automáticamente.
+If `certifi` is not installed, the module will attempt to install it automatically.
 
-### Opción 3: Modo CUSTOM (Certificados Corporativos)
+### Option 3: CUSTOM Mode (Corporate Certificates)
 
-**✓ Para entornos corporativos con certificados propios**
+**✓ For corporate environments with custom certificates**
 
-Este modo te permite especificar un archivo de certificado personalizado (por ejemplo, el certificado raíz de tu empresa).
+This mode allows you to specify a custom certificate file (e.g., your company's root certificate).
 
 ```python
 from fastetl.connectors.connector_genai import configure_ssl_verification, SSLVerificationMode
 
-# Especificar la ruta al certificado corporativo
+# Specify path to corporate certificate
 configure_ssl_verification(
     SSLVerificationMode.CUSTOM,
-    custom_cert_path=r'C:\certificados\atresmedia-root-ca.crt'
+    custom_cert_path=r'C:\certificates\atresmedia-root-ca.crt'
 )
 ```
 
-## Uso en modulo python (main.py)
+## Usage in Python Module (main.py)
 
-Para cambiar la configuración SSL en el archivo principal, añade estas líneas **ANTES** de importar o usar cualquier servicio de IA:
+To change SSL configuration in the main file, add these lines **BEFORE** importing or using any AI service:
 
 ```python
-# Al inicio del archivo, después de los imports básicos
+# At the beginning of the file, after basic imports
 from fastetl.connectors.connector_genai import configure_ssl_verification, SSLVerificationMode
 
-# Opción 1: Desarrollo (inseguro)
+# Option 1: Development (insecure)
 configure_ssl_verification(SSLVerificationMode.INSECURE)
 
-# Opción 2: Producción con certifi (recomendado)
+# Option 2: Production with certifi (recommended)
 # configure_ssl_verification(SSLVerificationMode.CERTIFI)
 
-# Opción 3: Certificado corporativo
+# Option 3: Corporate certificate
 # configure_ssl_verification(
 #     SSLVerificationMode.CUSTOM,
-#     custom_cert_path=r'C:\certificados\atresmedia-root-ca.crt'
+#     custom_cert_path=r'C:\certificates\atresmedia-root-ca.crt'
 # )
 ```
 
-## Variables de Entorno
+## Environment Variables
 
-Cada modo configura diferentes variables de entorno:
+Each mode configures different environment variables:
 
-### Modo INSECURE:
+### INSECURE Mode:
 
 - `PYTHONHTTPSVERIFY=0`
 - `CURL_CA_BUNDLE=''`
 - `REQUESTS_CA_BUNDLE=''`
 
-### Modo CERTIFI:
+### CERTIFI Mode:
 
-- `REQUESTS_CA_BUNDLE=<ruta a certifi>`
-- `SSL_CERT_FILE=<ruta a certifi>`
-- `CURL_CA_BUNDLE=<ruta a certifi>`
+- `REQUESTS_CA_BUNDLE=<path to certifi>`
+- `SSL_CERT_FILE=<path to certifi>`
+- `CURL_CA_BUNDLE=<path to certifi>`
 
-### Modo CUSTOM:
+### CUSTOM Mode:
 
-- `REQUESTS_CA_BUNDLE=<ruta personalizada>`
-- `SSL_CERT_FILE=<ruta personalizada>`
-- `CURL_CA_BUNDLE=<ruta personalizada>`
+- `REQUESTS_CA_BUNDLE=<custom path>`
+- `SSL_CERT_FILE=<custom path>`
+- `CURL_CA_BUNDLE=<custom path>`
 
-## Solución de Problemas
+## Troubleshooting
 
 ### Error: `SSL_ERROR_SSL: CERTIFICATE_VERIFY_FAILED`
 
-Este error ocurre cuando Python no puede verificar el certificado SSL del servidor.
+This error occurs when Python cannot verify the server's SSL certificate.
 
-**Soluciones:**
+**Solutions:**
 
-1. **Desarrollo rápido:** Usa modo INSECURE (ya configurado por defecto)
-2. **Producción:** Usa modo CERTIFI
-3. **Detrás de un proxy corporativo:** Usa modo CUSTOM con el certificado de tu empresa
+1. **Rapid development:** Use INSECURE mode (already configured by default)
+2. **Production:** Use CERTIFI mode
+3. **Behind corporate proxy:** Use CUSTOM mode with your company's certificate
 
-### ¿Cómo obtener el certificado corporativo?
+### How to obtain the corporate certificate?
 
-En Windows, puedes exportar el certificado raíz:
+On Windows, you can export the root certificate:
 
-1. Abre el Administrador de Certificados: `certmgr.msc`
-2. Navega a: Entidades de certificación raíz de confianza > Certificados
-3. Busca el certificado de tu empresa (ej: "Atresmedia Root CA")
-4. Clic derecho > Todas las tareas > Exportar
-5. Selecciona formato "X.509 codificado base 64 (.CER)"
-6. Guarda el archivo y usa su ruta en el modo CUSTOM
+1. Open Certificate Manager: `certmgr.msc`
+2. Navigate to: Trusted Root Certification Authorities > Certificates
+3. Find your company's certificate (e.g., "Atresmedia Root CA")
+4. Right-click > All Tasks > Export
+5. Select "Base-64 encoded X.509 (.CER)" format
+6. Save the file and use its path in CUSTOM mode
 
-### Verificar qué modo está activo
+### Verify active mode
 
-El módulo imprime un mensaje en la consola al configurarse:
+The module prints a message to the console when configured:
 
-- `⚠️ SSL verification DISABLED` → Modo INSECURE
-- `✓ SSL verification enabled using certifi` → Modo CERTIFI
-- `✓ SSL verification enabled using custom certificate` → Modo CUSTOM
+- `⚠️ SSL verification DISABLED` → INSECURE Mode
+- `✓ SSL verification enabled using certifi` → CERTIFI Mode
+- `✓ SSL verification enabled using custom certificate` → CUSTOM Mode
 
-## Migración a Producción
+## Migration to Production
 
-**IMPORTANTE:** Antes de pasar a producción, cambia el modo de INSECURE a CERTIFI:
+**IMPORTANT:** Before moving to production, change mode from INSECURE to CERTIFI:
 
 ```python
-# En main_guardianZ.py, cambiar de:
+# In main_guardianZ.py, change from:
 configure_ssl_verification(SSLVerificationMode.INSECURE)
 
-# A:
+# To:
 configure_ssl_verification(SSLVerificationMode.CERTIFI)
 ```
 
-Esto asegura que las conexiones SSL sean seguras y verificadas.
+This ensures SSL connections are secure and verified.
 
 ---
 

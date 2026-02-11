@@ -1,134 +1,134 @@
-# Módulo CLI - Nono
+# CLI Module - Nono
 
-## Descripción
+## Description
 
-Interfaz de línea de comandos para Nono GenAI Tasker con soporte multi-proveedor, salida con colores, barras de progreso y parsing unificado de argumentos.
+Command-line interface for Nono GenAI Tasker with multi-provider support, colored output, progress bars, and unified argument parsing.
 
-## Instalación
+## Installation
 
-El módulo está incluido en el proyecto. No requiere dependencias adicionales.
+The module is included in the project. No additional dependencies required.
 
-Para soporte de colores en Windows sin ANSI nativo:
+For color support on Windows without native ANSI:
 ```bash
 pip install colorama
 ```
 
-## Inicio Rápido
+## Quick Start
 
-### Uso desde línea de comandos
+### Command Line Usage
 
 ```bash
-# Mostrar ayuda
+# Show help
 python -m nono.cli --help
 
-# Ejecutar con prompt directo
-python -m nono.cli --provider gemini --prompt "Explica qué es Python"
+# Execute with direct prompt
+python -m nono.cli --provider gemini --prompt "Explain what Python is"
 
-# Ejecutar con archivo de tarea
-python -m nono.cli --provider openai --task summarize --input documento.txt
+# Execute with task file
+python -m nono.cli --provider openai --task summarize --input document.txt
 
-# Usar Ollama local
-python -m nono.cli --provider ollama --model llama3 --prompt "Hola"
+# Use local Ollama
+python -m nono.cli --provider ollama --model llama3 --prompt "Hello"
 
-# Cargar parámetros desde archivo
+# Load parameters from file
 python -m nono.cli @params.txt
 
-# Modo simulación (dry-run)
+# Dry-run mode
 python -m nono.cli --dry-run --provider gemini --prompt "Test"
 ```
 
-### Uso como módulo Python
+### Usage as Python Module
 
 ```python
 from nono.cli import create_cli, print_success, print_error
 
-# Crear CLI con factory function
+# Create CLI with factory function
 cli = create_cli(
-    prog="mi_herramienta",
-    description="Mi herramienta GenAI",
+    prog="my_tool",
+    description="My GenAI tool",
     version="1.0.0",
     with_provider=True,
     with_task=True,
     with_io=True
 )
 
-# Agregar ejemplos de uso
+# Add usage examples
 cli.add_examples([
-    "%(prog)s --provider gemini --prompt 'Hola' -o salida.txt",
+    "%(prog)s --provider gemini --prompt 'Hello' -o output.txt",
     "%(prog)s @params.txt"
 ])
 
-# Parsear argumentos
+# Parse arguments
 args = cli.parse_args()
 
-# Tu lógica aquí...
+# Your logic here...
 cli.increment_stat('processed', 100)
-print_success("Completado!")
+print_success("Completed!")
 cli.print_final_summary()
 ```
 
-## Línea de Comandos
+## Command Line
 
-### Opciones Globales
+### Global Options
 
-| Opción | Descripción |
+| Option | Description |
 |--------|-------------|
-| `--version`, `-V` | Mostrar versión |
-| `--verbose`, `-v` | Aumentar verbosidad (-v=INFO, -vv=DEBUG) |
-| `--quiet`, `-q` | Suprimir salida no esencial |
-| `--no-color` | Desactivar colores |
-| `--dry-run` | Simular sin hacer llamadas API |
-| `--output-format`, `-F` | Formato de salida: table, json, csv, text, markdown, summary, quiet |
-| `--config-file` | Cargar configuración desde archivo TOML/JSON |
-| `--log-file` | Escribir logs a archivo |
+| `--version`, `-V` | Show version |
+| `--verbose`, `-v` | Increase verbosity (-v=INFO, -vv=DEBUG) |
+| `--quiet`, `-q` | Suppress non-essential output |
+| `--no-color` | Disable colors |
+| `--dry-run` | Simulate without making API calls |
+| `--output-format`, `-F` | Output format: table, json, csv, text, markdown, summary, quiet |
+| `--config-file` | Load configuration from TOML/JSON file |
+| `--log-file` | Write logs to file |
 
-### Configuración del Proveedor IA
+### AI Provider Configuration
 
-| Opción | Descripción |
+| Option | Description |
 |--------|-------------|
-| `--provider`, `-p` | Proveedor: gemini, openai, perplexity, deepseek, grok, ollama |
-| `--model`, `-m` | Nombre del modelo |
-| `--api-key` | API key (o usar variable de entorno) |
-| `--api-key-file` | Leer API key desde archivo |
-| `--temperature` | Temperatura de generación 0.0-2.0 (default: 0.7) |
-| `--max-tokens` | Tokens máximos en respuesta (default: 4096) |
-| `--timeout` | Timeout de request en segundos (default: 60) |
-| `--ollama-host` | URL del servidor Ollama (default: http://localhost:11434) |
+| `--provider`, `-p` | Provider: gemini, openai, perplexity, deepseek, grok, ollama |
+| `--model`, `-m` | Model name |
+| `--api-key` | API key (or use environment variable) |
+| `--api-key-file` | Read API key from file |
+| `--temperature` | Generation temperature 0.0-2.0 (default: 0.7) |
+| `--max-tokens` | Maximum tokens in response (default: 4096) |
+| `--timeout` | Request timeout in seconds (default: 60) |
+| `--ollama-host` | Ollama server URL (default: http://localhost:11434) |
 
-### Configuración de Tareas
+### Task Configuration
 
-| Opción | Descripción |
+| Option | Description |
 |--------|-------------|
-| `--task`, `-t` | Nombre de tarea o ruta a archivo JSON |
-| `--prompt` | Texto de prompt directo |
-| `--system-prompt` | Prompt/instrucciones del sistema |
-| `--template` | Archivo de template Jinja2 |
-| `--variables`, `--vars` | JSON string o archivo con variables del template |
+| `--task`, `-t` | Task name or path to JSON file |
+| `--prompt` | Direct prompt text |
+| `--system-prompt` | System prompt/instructions |
+| `--template` | Jinja2 template file |
+| `--variables`, `--vars` | JSON string or file with template variables |
 
-### Entrada/Salida
+### Input/Output
 
-| Opción | Descripción |
+| Option | Description |
 |--------|-------------|
-| `--input`, `-i` | Archivo o datos de entrada |
-| `--input-format` | Formato de entrada: text, json, csv, file |
-| `--output`, `-o` | Archivo de salida (stdout si no se especifica) |
-| `--output-type` | Formato de salida: text, json, csv, markdown |
-| `--append` | Añadir al archivo en lugar de sobrescribir |
+| `--input`, `-i` | Input file or data |
+| `--input-format` | Input format: text, json, csv, file |
+| `--output`, `-o` | Output file (stdout if not specified) |
+| `--output-type` | Output format: text, json, csv, markdown |
+| `--append` | Append to file instead of overwriting |
 
-### Procesamiento por Lotes
+### Batch Processing
 
-| Opción | Descripción |
+| Option | Description |
 |--------|-------------|
-| `--batch` | Activar modo de procesamiento por lotes |
-| `--batch-file` | Archivo con entradas (una por línea o array JSON) |
-| `--batch-size` | Número de items por lote (default: 10) |
-| `--delay` | Delay entre requests en segundos (default: 0.5) |
-| `--retry` | Número de reintentos en fallo (default: 3) |
-| `--continue-on-error` | Continuar procesamiento en fallos individuales |
+| `--batch` | Enable batch processing mode |
+| `--batch-file` | File with inputs (one per line or JSON array) |
+| `--batch-size` | Number of items per batch (default: 10) |
+| `--delay` | Delay between requests in seconds (default: 0.5) |
+| `--retry` | Number of retries on failure (default: 3) |
+| `--continue-on-error` | Continue processing on individual failures |
 
-## Archivo de Parámetros (@params.txt)
+## Parameter File (@params.txt)
 
-Puedes cargar argumentos desde un archivo usando `@filename`:
+You can load arguments from a file using `@filename`:
 
 ```
 --provider
@@ -136,55 +136,55 @@ gemini
 --model
 gemini-3-flash-preview
 --prompt
-Genera un resumen del siguiente texto
+Generate a summary of the following text
 --input
-documento.txt
+document.txt
 --output
-resumen.txt
+summary.txt
 --verbose
 ```
 
-## Utilidades de Salida
+## Output Utilities
 
-### Mensajes con Color
+### Colored Messages
 
 ```python
 from nono.cli import print_success, print_error, print_warning, print_info, cprint, Colors
 
-print_success("Operación completada")  # ✓ Verde
-print_error("Algo falló")              # ✗ Rojo
-print_warning("Cuidado")               # ⚠ Amarillo
-print_info("Información")              # ℹ Cyan
+print_success("Operation completed")  # ✓ Green
+print_error("Something failed")              # ✗ Red
+print_warning("Careful")               # ⚠ Yellow
+print_info("Information")              # ℹ Cyan
 
-# Personalizado
-cprint("Texto en negrita cyan", Colors.CYAN, bold=True)
-cprint("Texto tenue", Colors.GRAY, dim=True)
+# Custom
+cprint("Bold cyan text", Colors.CYAN, bold=True)
+cprint("Dim text", Colors.GRAY, dim=True)
 ```
 
-### Tablas
+### Tables
 
 ```python
 from nono.cli import print_table
 
-headers = ["Proveedor", "Modelo", "Estado"]
+headers = ["Provider", "Model", "Status"]
 rows = [
-    ["Gemini", "gemini-3-flash", "Activo"],
-    ["OpenAI", "gpt-4o-mini", "Activo"],
+    ["Gemini", "gemini-3-flash", "Active"],
+    ["OpenAI", "gpt-4o-mini", "Active"],
     ["Ollama", "llama3", "Offline"],
 ]
 print_table(headers, rows)
 
-# Con columna de índice
+# With index column
 print_table(headers, rows, show_index=True)
 ```
 
-### Barra de Progreso
+### Progress Bar
 
 ```python
 from nono.cli import print_progress
 
 for i in range(101):
-    print_progress(i, 100, prefix="Procesando", suffix="Completo")
+    print_progress(i, 100, prefix="Processing", suffix="Complete")
 ```
 
 ### Spinner
@@ -193,67 +193,67 @@ for i in range(101):
 from nono.cli import print_spinner
 import time
 
-update = print_spinner("Cargando datos...")
+update = print_spinner("Loading data...")
 for _ in range(50):
     update()
     time.sleep(0.1)
 ```
 
-### Resumen de Estadísticas
+### Statistics Summary
 
 ```python
 from nono.cli import print_summary
 
 stats = {
-    'total_procesados': 100,
-    'exitosos': 95,
-    'errores': 5,
-    'tokens_usados': 15000,
+    'total_processed': 100,
+    'successful': 95,
+    'errors': 5,
+    'tokens_used': 15000,
 }
-print_summary(stats, title="RESULTADOS")
+print_summary(stats, title="RESULTS")
 ```
 
-### Confirmación Interactiva
+### Interactive Confirmation
 
 ```python
 from nono.cli import confirm_action
 
-if confirm_action("¿Deseas continuar?", default=False):
-    print("Continuando...")
+if confirm_action("Do you want to continue?", default=False):
+    print("Continuing...")
 else:
-    print("Cancelado")
+    print("Cancelled")
 ```
 
-## Referencia de API
+## API Reference
 
-### Clase CLIBase
+### CLIBase Class
 
 ```python
 from nono.cli import CLIBase
 
 cli = CLIBase(
-    prog="mi_cli",           # Nombre del programa
-    description="Mi CLI",    # Descripción para ayuda
-    version="1.0.0"          # Versión
+    prog="my_cli",           # Program name
+    description="My CLI",    # Description for help
+    version="1.0.0"          # Version
 )
 ```
 
-| Método | Descripción |
+| Method | Description |
 |--------|-------------|
-| `add_ai_provider_group()` | Añadir args de proveedor IA |
-| `add_task_group()` | Añadir args de configuración de tareas |
-| `add_io_group(formats)` | Añadir args de entrada/salida |
-| `add_batch_group()` | Añadir args de procesamiento por lotes |
-| `add_group(name, title)` | Añadir grupo de argumentos personalizado |
-| `add_example(example)` | Añadir ejemplo de uso |
-| `add_examples(list)` | Añadir múltiples ejemplos |
-| `parse_args()` | Parsear línea de comandos |
-| `increment_stat(name, value)` | Incrementar estadística |
-| `set_stat(name, value)` | Establecer estadística |
-| `get_elapsed_time()` | Obtener tiempo transcurrido formateado |
-| `print_final_summary(title)` | Imprimir resumen final |
-| `exit_success(message)` | Salir con código 0 |
-| `exit_with_error(message)` | Salir con error |
+| `add_ai_provider_group()` | Add AI provider args |
+| `add_task_group()` | Add task configuration args |
+| `add_io_group(formats)` | Add input/output args |
+| `add_batch_group()` | Add batch processing args |
+| `add_group(name, title)` | Add custom argument group |
+| `add_example(example)` | Add usage example |
+| `add_examples(list)` | Add multiple examples |
+| `parse_args()` | Parse command line |
+| `increment_stat(name, value)` | Increment statistic |
+| `set_stat(name, value)` | Set statistic |
+| `get_elapsed_time()` | Get formatted elapsed time |
+| `print_final_summary(title)` | Print final summary |
+| `exit_success(message)` | Exit with code 0 |
+| `exit_with_error(message)` | Exit with error |
 
 ### Factory Function
 
@@ -261,13 +261,13 @@ cli = CLIBase(
 from nono.cli import create_cli
 
 cli = create_cli(
-    prog="herramienta",
-    description="Mi herramienta",
+    prog="tool",
+    description="My tool",
     version="1.0.0",
-    with_provider=True,   # Añadir grupo de proveedor IA
-    with_task=True,       # Añadir grupo de tareas
-    with_io=True,         # Añadir grupo de E/S
-    with_batch=False      # Sin procesamiento por lotes
+    with_provider=True,   # Add AI provider group
+    with_task=True,       # Add task group
+    with_io=True,         # Add I/O group
+    with_batch=False      # No batch processing
 )
 ```
 
@@ -276,7 +276,7 @@ cli = create_cli(
 ```python
 from nono.cli import OutputFormat, AIProvider, LogLevel
 
-# Formatos de salida
+# Output formats
 OutputFormat.TABLE
 OutputFormat.JSON
 OutputFormat.CSV
@@ -285,7 +285,7 @@ OutputFormat.MARKDOWN
 OutputFormat.SUMMARY
 OutputFormat.QUIET
 
-# Proveedores de IA
+# AI providers
 AIProvider.GEMINI
 AIProvider.OPENAI
 AIProvider.PERPLEXITY
@@ -293,7 +293,7 @@ AIProvider.DEEPSEEK
 AIProvider.GROK
 AIProvider.OLLAMA
 
-# Niveles de log
+# Log levels
 LogLevel.DEBUG
 LogLevel.INFO
 LogLevel.WARNING
@@ -301,12 +301,12 @@ LogLevel.ERROR
 LogLevel.QUIET
 ```
 
-### Clase Colors
+### Colors Class
 
 ```python
 from nono.cli import Colors
 
-# Colores ANSI
+# ANSI colors
 Colors.RED
 Colors.GREEN
 Colors.YELLOW
@@ -316,10 +316,10 @@ Colors.MAGENTA
 Colors.WHITE
 Colors.GRAY
 
-# Colores semánticos
-Colors.SUCCESS  # Verde
-Colors.ERROR    # Rojo
-Colors.WARNING  # Amarillo
+# Semantic colors
+Colors.SUCCESS  # Green
+Colors.ERROR    # Red
+Colors.WARNING  # Yellow
 Colors.INFO     # Cyan
 
 # Control
@@ -327,50 +327,50 @@ Colors.BOLD
 Colors.DIM
 Colors.RESET
 
-# Métodos
-Colors.disable()  # Desactivar colores
-Colors.enable()   # Reactivar colores
-Colors.init()     # Inicializar (automático)
+# Methods
+Colors.disable()  # Disable colors
+Colors.enable()   # Re-enable colors
+Colors.init()     # Initialize (automatic)
 ```
 
-## Ejemplos Completos
+## Complete Examples
 
-### CLI Simple para Traducción
+### Simple CLI for Translation
 
 ```python
 from nono.cli import create_cli, print_success, print_info
 
 def main():
     cli = create_cli(
-        prog="traductor",
-        description="Traduce texto usando IA",
+        prog="translator",
+        description="Translate text using AI",
         version="1.0.0"
     )
     
-    # Añadir argumento personalizado
-    lang_group = cli.add_group("language", "Idiomas")
-    lang_group.add_argument('--source-lang', default='auto', help="Idioma origen")
-    lang_group.add_argument('--target-lang', required=True, help="Idioma destino")
+    # Add custom argument
+    lang_group = cli.add_group("language", "Languages")
+    lang_group.add_argument('--source-lang', default='auto', help="Source language")
+    lang_group.add_argument('--target-lang', required=True, help="Target language")
     
     cli.add_examples([
-        "%(prog)s --provider gemini --prompt 'Hola mundo' --target-lang en",
+        "%(prog)s --provider gemini --prompt 'Hello world' --target-lang es",
     ])
     
     args = cli.parse_args()
     
-    print_info(f"Traduciendo de {args.source_lang} a {args.target_lang}")
+    print_info(f"Translating from {args.source_lang} to {args.target_lang}")
     
-    # Lógica de traducción aquí...
+    # Translation logic here...
     
     cli.increment_stat('translated', 1)
-    print_success("Traducción completada!")
+    print_success("Translation completed!")
     cli.print_final_summary()
 
 if __name__ == "__main__":
     main()
 ```
 
-### CLI con Procesamiento por Lotes
+### CLI with Batch Processing
 
 ```python
 from nono.cli import create_cli, print_progress, print_summary
@@ -379,7 +379,7 @@ import time
 def main():
     cli = create_cli(
         prog="batch_processor",
-        description="Procesa múltiples archivos con IA",
+        description="Process multiple files with AI",
         with_batch=True
     )
     
@@ -391,9 +391,9 @@ def main():
         
         total = len(items)
         for i, item in enumerate(items):
-            print_progress(i + 1, total, prefix="Procesando")
+            print_progress(i + 1, total, prefix="Processing")
             
-            # Procesar item...
+            # Process item...
             time.sleep(args.delay)
             
             cli.increment_stat('processed', 1)
@@ -404,49 +404,49 @@ if __name__ == "__main__":
     main()
 ```
 
-## Personalización
+## Customization
 
-### Desactivar Colores
+### Disable Colors
 
 ```python
 from nono.cli import Colors
 
-# Desactivar globalmente
+# Disable globally
 Colors.disable()
 
-# O usar argumento --no-color en línea de comandos
+# Or use --no-color argument on command line
 ```
 
-### Cambiar Colores por Defecto
+### Change Default Colors
 
 ```python
 from nono.cli import Colors
 
-Colors.SUCCESS = Colors.BLUE  # Cambiar éxito a azul
-Colors.ERROR = Colors.MAGENTA  # Cambiar error a magenta
+Colors.SUCCESS = Colors.BLUE  # Change success to blue
+Colors.ERROR = Colors.MAGENTA  # Change error to magenta
 ```
 
-### Grupo de Argumentos Personalizado
+### Custom Argument Group
 
 ```python
 from nono.cli import CLIBase
 
 cli = CLIBase(prog="custom", version="1.0.0")
 
-# Añadir grupo personalizado
-db_group = cli.add_group("database", "Conexión a Base de Datos")
-db_group.add_argument('--db-host', required=True, help="Host de BD")
-db_group.add_argument('--db-port', type=int, default=5432, help="Puerto")
-db_group.add_argument('--db-name', required=True, help="Nombre de BD")
-db_group.add_argument('--db-user', help="Usuario")
-db_group.add_argument('--db-password', help="Contraseña")
+# Add custom group
+db_group = cli.add_group("database", "Database Connection")
+db_group.add_argument('--db-host', required=True, help="DB host")
+db_group.add_argument('--db-port', type=int, default=5432, help="Port")
+db_group.add_argument('--db-name', required=True, help="Database name")
+db_group.add_argument('--db-user', help="User")
+db_group.add_argument('--db-password', help="Password")
 ```
 
-## Variables de Entorno
+## Environment Variables
 
-El CLI soporta API keys mediante variables de entorno:
+The CLI supports API keys via environment variables:
 
-| Proveedor | Variable |
+| Provider | Variable |
 |-----------|----------|
 | Gemini | `GOOGLE_API_KEY` |
 | OpenAI | `OPENAI_API_KEY` |
@@ -454,46 +454,46 @@ El CLI soporta API keys mediante variables de entorno:
 | DeepSeek | `DEEPSEEK_API_KEY` |
 | Grok | `GROK_API_KEY` |
 
-También puedes usar `--api-key` o `--api-key-file` para especificar la clave.
+You can also use `--api-key` or `--api-key-file` to specify the key.
 
-## Integración con Config
+## Config Integration
 
-El CLI se integra con el [módulo de configuración](README_config.md) para gestión centralizada de settings.
+The CLI integrates with the [configuration module](README_config.md) for centralized settings management.
 
-### Carga Automática de Configuración
+### Automatic Configuration Loading
 
 ```python
 from nono.config import load_config
 from nono.cli import CLIBase
 
-# 1. Cargar configuración base desde archivo
+# 1. Load base configuration from file
 config = load_config(filepath='config.toml', env_prefix='NONO_')
 
-# 2. Crear CLI
-cli = CLIBase(prog="mi_app", version="1.0.0")
+# 2. Create CLI
+cli = CLIBase(prog="my_app", version="1.0.0")
 cli.add_ai_provider_group()
 args = cli.parse_args()
 
-# 3. Fusionar argumentos CLI en config (máxima prioridad)
+# 3. Merge CLI arguments into config (maximum priority)
 config.load_args(vars(args))
 
-# 4. Usar valores finales (CLI > Env > File > Defaults)
+# 4. Use final values (CLI > Env > File > Defaults)
 provider = config.get('provider', 'gemini')
 model = config.get('model') or config.get('google.default_model')
 ```
 
-### Valores por Defecto desde Config
+### Default Values from Config
 
-Puedes usar la configuración para establecer defaults del CLI:
+You can use configuration to set CLI defaults:
 
 ```python
 from nono.config import load_config
 from nono.cli import CLIConfig, CLIBase
 
-# Leer defaults desde config.toml
+# Read defaults from config.toml
 config = load_config()
 
-# Crear CLI con defaults de config
+# Create CLI with config defaults
 cli_config = CLIConfig(
     prog_name="nono",
     default_timeout=config.get('rate_limits.timeout', 60),
@@ -502,7 +502,7 @@ cli_config = CLIConfig(
 cli = CLIBase(config=cli_config)
 ```
 
-### Ejemplo Completo
+### Complete Example
 
 ```python
 #!/usr/bin/env python
@@ -510,7 +510,7 @@ from nono.config import load_config, ConfigSchema
 from nono.cli import CLIBase, print_success, print_error
 
 def main():
-    # Configuración con validación
+    # Configuration with validation
     schema = ConfigSchema()
     schema.add_field('google.default_model', required=True)
     
@@ -521,38 +521,38 @@ def main():
     cli.add_ai_provider_group()
     args = cli.parse_args()
     
-    # Fusionar (CLI tiene prioridad)
+    # Merge (CLI has priority)
     config.load_args(vars(args))
     
-    # Validar configuración final
+    # Validate final configuration
     try:
         config.validate()
     except ValueError as e:
         cli.exit_with_error(str(e))
     
-    # Usar configuración
+    # Use configuration
     model = config['google.default_model']
-    print_success(f"Usando modelo: {model}")
+    print_success(f"Using model: {model}")
 
 if __name__ == "__main__":
     main()
 ```
 
-### Flujo de Prioridad
+### Priority Flow
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│                    PRIORIDAD DE VALORES                      │
+│                    VALUE PRIORITY                        │
 ├──────────────────────────────────────────────────────────────┤
-│  CLI Arguments (--provider, --model)      <- Máxima         │
-│  Environment Variables (NONO_*)                              │
-│  Config File (config.toml)                                   │
-│  Default Values                           <- Mínima          │
+│  CLI Arguments (--provider, --model)      <- Maximum     │
+│  Environment Variables (NONO_*)                          │
+│  Config File (config.toml)                               │
+│  Default Values                           <- Minimum     │
 └──────────────────────────────────────────────────────────────┘
 ```
 
-📖 Ver también: [Configuration Documentation](README_config.md)
+📖 See also: [Configuration Documentation](README_config.md)
 
-## Autor
+## Author
 
 **DatamanEdge** - MIT License

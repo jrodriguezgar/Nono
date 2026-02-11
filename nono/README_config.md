@@ -1,33 +1,33 @@
-# Módulo de Configuración - Nono
+# Configuration Module - Nono
 
-## Descripción
+## Description
 
-Gestión unificada de configuración con resolución multi-fuente y diseño basado en instancias para flexibilidad y testabilidad.
+Unified configuration management with multi-source priority resolution and instance-based design for flexibility and testability.
 
-## Instalación
+## Installation
 
-El módulo está incluido en el proyecto. No requiere dependencias adicionales para JSON/TOML (Python 3.11+).
+The module is included in the project. No additional dependencies required for JSON/TOML (Python 3.11+).
 
-Para Python < 3.11:
+For Python < 3.11:
 ```bash
 pip install tomli
 ```
 
-Para soporte YAML:
+For YAML support:
 ```bash
 pip install pyyaml
 ```
 
-## Inicio Rápido
+## Quick Start
 
 ```python
 from nono.config import Config, load_config
 
-# Uso simple
+# Simple usage
 config = load_config(filepath='config.toml', env_prefix='NONO_')
 print(config['google.default_model'])
 
-# Con method chaining
+# With method chaining
 config = (
     Config(defaults={'timeout': 30})
     .load_file('config.toml')
@@ -35,68 +35,68 @@ config = (
 )
 ```
 
-## Resolución de Prioridad
+## Priority Resolution
 
-Los valores se resuelven en orden (el primero encontrado gana):
+Values are resolved in order (first found wins):
 
-| Prioridad | Fuente | Método |
+| Priority | Source | Method |
 |-----------|--------|--------|
-| 1 (Alta) | Argumentos | `load_args()` / `set()` |
-| 2 | Variables de entorno | `load_env(prefix='NONO_')` |
-| 3 | Archivo de configuración | `load_file('config.toml')` |
-| 4 (Baja) | Valores por defecto | `Config(defaults={...})` |
+| 1 (High) | Arguments | `load_args()` / `set()` |
+| 2 | Environment variables | `load_env(prefix='NONO_')` |
+| 3 | Configuration file | `load_file('config.toml')` |
+| 4 (Low) | Default values | `Config(defaults={...})` |
 
-## API Principal
+## Main API
 
-### Clase `Config`
+### `Config` Class
 
 ```python
 from nono.config import Config
 
-# Crear instancia
+# Create instance
 config = Config(
-    defaults={'app.timeout': 30},      # Valores por defecto
-    schema=None,                        # Schema para validación (opcional)
-    auto_discover=False                 # Buscar config.toml automáticamente
+    defaults={'app.timeout': 30},      # Default values
+    schema=None,                        # Schema for validation (optional)
+    auto_discover=False                 # Auto-search for config.toml
 )
 
-# Cargar desde archivo
+# Load from file
 config.load_file('config.toml')         # TOML
 config.load_file('config.json')         # JSON
-config.load_file('config.yaml')         # YAML (requiere pyyaml)
+config.load_file('config.yaml')         # YAML (requires pyyaml)
 
-# Cargar desde variables de entorno
+# Load from environment variables
 config.load_env(prefix='NONO_')
 
-# Cargar desde argumentos (argparse.Namespace o dict)
+# Load from arguments (argparse.Namespace or dict)
 config.load_args({'debug': True, 'port': 8080})
 
-# Obtener valores
+# Get values
 model = config.get('google.default_model')
 port = config.get('server.port', default=8080, type=int)
-api_key = config.require('api.key')  # Lanza ValueError si no existe
+api_key = config.require('api.key')  # Raises ValueError if not found
 
-# Establecer valores (prioridad máxima)
+# Set values (maximum priority)
 config.set('runtime.mode', 'production')
 
-# Acceso tipo diccionario
+# Dictionary-style access
 value = config['key']
 config['key'] = 'value'
 exists = 'key' in config
 
-# Obtener todos los valores
+# Get all values
 all_config = config.all()
 
-# Obtener fuente de un valor
+# Get source of a value
 source = config.get_source('google.default_model')  # ConfigSource.FILE
 
-# Copiar configuración (útil para tests)
+# Copy configuration (useful for tests)
 isolated = config.copy()
 ```
 
 ### Method Chaining
 
-Todos los métodos de carga retornan `self` para encadenamiento:
+All load methods return `self` for chaining:
 
 ```python
 config = (
@@ -107,21 +107,21 @@ config = (
 )
 ```
 
-### Función `load_config()`
+### `load_config()` Function
 
-Atajo para crear y cargar configuración:
+Shortcut for creating and loading configuration:
 
 ```python
 from nono.config import load_config
 
 config = load_config(
-    filepath='config.toml',     # Ruta al archivo (opcional)
-    defaults={'timeout': 30},   # Valores por defecto
-    env_prefix='NONO_'          # Prefijo para variables de entorno
+    filepath='config.toml',     # File path (optional)
+    defaults={'timeout': 30},   # Default values
+    env_prefix='NONO_'          # Prefix for environment variables
 )
 ```
 
-## Formatos de Archivo
+## File Formats
 
 ### TOML (config.toml)
 
@@ -160,21 +160,21 @@ rate_limits:
   delay_between_requests: 0.5
 ```
 
-## Variables de Entorno
+## Environment Variables
 
-Prefijo: `NONO_`
+Prefix: `NONO_`
 
-### Mapeo de claves
+### Key Mapping
 
-| Variable de Entorno | Clave de Configuración |
-|---------------------|------------------------|
+| Environment Variable | Configuration Key |
+|---------------------|----------------------|
 | `NONO_TIMEOUT` | `timeout` |
 | `NONO_GOOGLE__DEFAULT_MODEL` | `google.default_model` |
 | `NONO_RATE_LIMITS__DELAY` | `rate_limits.delay` |
 
-> **Nota**: Usa doble guion bajo (`__`) para claves anidadas.
+> **Note**: Use double underscore (`__`) for nested keys.
 
-### Conversión de tipos automática
+### Automatic Type Conversion
 
 ```bash
 NONO_DEBUG=true          # → True (bool)
@@ -183,12 +183,12 @@ NONO_TIMEOUT=30.5        # → 30.5 (float)
 NONO_HOSTS=["a","b"]     # → ["a", "b"] (list)
 ```
 
-## Validación con Schema
+## Schema Validation
 
 ```python
 from nono.config import Config, ConfigSchema
 
-# Definir schema
+# Define schema
 schema = ConfigSchema()
 schema.add_field('google.default_model', type=str, required=True)
 schema.add_field('rate_limits.delay_between_requests', 
@@ -196,34 +196,34 @@ schema.add_field('rate_limits.delay_between_requests',
 schema.add_field('ollama.host', type=str, required=True)
 schema.add_field('app.mode', type=str, choices=['dev', 'prod'])
 
-# Crear config con schema
+# Create config with schema
 config = Config(schema=schema)
 config.load_file('config.toml')
 
-# Validar (lanza ValueError si falla)
+# Validate (raises ValueError on failure)
 config.validate()
 
-# O sin excepción
+# Or without exception
 is_valid, errors = config.validate(raise_on_error=False)
 if not is_valid:
     for error in errors:
         print(f"Error: {error}")
 ```
 
-### Opciones de validación
+### Validation Options
 
-| Parámetro | Descripción |
+| Parameter | Description |
 |-----------|-------------|
-| `type` | Tipo esperado (`str`, `int`, `float`, `bool`) |
-| `required` | `True` si el campo es obligatorio |
-| `default` | Valor por defecto para validación |
-| `choices` | Lista de valores permitidos |
-| `min_value` | Valor mínimo (numéricos) |
-| `max_value` | Valor máximo (numéricos) |
+| `type` | Expected type (`str`, `int`, `float`, `bool`) |
+| `required` | `True` if field is mandatory |
+| `default` | Default value for validation |
+| `choices` | List of allowed values |
+| `min_value` | Minimum value (numeric) |
+| `max_value` | Maximum value (numeric) |
 
-## API Legacy (Compatible hacia atrás)
+## Legacy API (Backward Compatible)
 
-Para compatibilidad con código existente:
+For compatibility with existing code:
 
 ```python
 from nono.config import (
@@ -234,35 +234,35 @@ from nono.config import (
     set_prompts_dir,
 )
 
-# Obtener directorios
+# Get directories
 templates = get_templates_dir()
 prompts = get_prompts_dir()
 
-# Configurar directorios
+# Set directories
 set_templates_dir('/path/to/templates')
 set_prompts_dir('/path/to/prompts')
 
-# Obtener valores del archivo TOML
+# Get values from TOML file
 model = NonoConfig.get_config_value('google', 'default_model')
 
-# Cargar archivo personalizado
+# Load custom file
 NonoConfig.load_from_file('/path/to/config.toml')
 
-# Reset (útil para tests)
+# Reset (useful for tests)
 NonoConfig.reset()
 ```
 
-### Variables de entorno Legacy
+### Legacy Environment Variables
 
-| Variable | Descripción |
+| Variable | Description |
 |----------|-------------|
-| `NONO_TEMPLATES_DIR` | Ruta al directorio de templates |
-| `NONO_PROMPTS_DIR` | Ruta al directorio de prompts |
-| `NONO_CONFIG_FILE` | Ruta al archivo config.toml |
+| `NONO_TEMPLATES_DIR` | Path to templates directory |
+| `NONO_PROMPTS_DIR` | Path to prompts directory |
+| `NONO_CONFIG_FILE` | Path to config.toml file |
 
-## Ejemplos de Uso
+## Usage Examples
 
-### Configuración básica
+### Basic Configuration
 
 ```python
 from nono.config import load_config
@@ -272,36 +272,36 @@ model = config['google.default_model']
 delay = config.get('rate_limits.delay_between_requests', type=float)
 ```
 
-### Con valores requeridos
+### With Required Values
 
 ```python
 from nono.config import Config
 
 config = Config().load_file('config.toml')
 
-# Lanza ValueError si no existe
-api_key = config.require('api.key', message='API key es obligatoria')
+# Raises ValueError if not found
+api_key = config.require('api.key', message='API key is required')
 ```
 
-### Aislamiento para tests
+### Isolation for Tests
 
 ```python
 from nono.config import Config
 
 def test_feature():
-    # Crear configuración aislada
+    # Create isolated configuration
     config = Config(defaults={'test.mode': True})
     
-    # O copiar una existente
+    # Or copy an existing one
     original = load_config()
     isolated = original.copy()
     isolated.set('test.override', 'value')
     
-    # El original no se ve afectado
+    # Original is unaffected
     assert 'test.override' not in original
 ```
 
-### Tracking de fuentes
+### Source Tracking
 
 ```python
 from nono.config import Config, ConfigSource
@@ -310,94 +310,94 @@ config = Config(defaults={'app.timeout': 30})
 config.load_file('config.toml')
 config.load_env(prefix='NONO_')
 
-# Saber de dónde viene cada valor
+# Know where each value comes from
 source = config.get_source('google.default_model')
 if source == ConfigSource.ENVIRONMENT:
-    print("Valor sobrescrito por variable de entorno")
+    print("Value overridden by environment variable")
 elif source == ConfigSource.FILE:
-    print("Valor del archivo de configuración")
+    print("Value from configuration file")
 ```
 
-## Referencia de API
+## API Reference
 
-| Método/Función | Descripción |
+| Method/Function | Description |
 |----------------|-------------|
-| `Config()` | Crear nueva instancia |
-| `load_file(path)` | Cargar desde archivo |
-| `load_env(prefix)` | Cargar desde variables de entorno |
-| `load_args(args)` | Cargar desde argumentos |
-| `get(key, default, type)` | Obtener valor con fallback |
-| `set(key, value)` | Establecer valor (prioridad máxima) |
-| `require(key, message)` | Obtener valor requerido |
-| `all()` | Obtener todos los valores resueltos |
-| `validate()` | Validar contra schema |
-| `copy()` | Crear copia profunda |
-| `get_source(key)` | Obtener fuente del valor |
-| `load_config()` | Función helper para carga rápida |
-| `create_sample_config()` | Crear archivo de ejemplo |
+| `Config()` | Create new instance |
+| `load_file(path)` | Load from file |
+| `load_env(prefix)` | Load from environment variables |
+| `load_args(args)` | Load from arguments |
+| `get(key, default, type)` | Get value with fallback |
+| `set(key, value)` | Set value (maximum priority) |
+| `require(key, message)` | Get required value |
+| `all()` | Get all resolved values |
+| `validate()` | Validate against schema |
+| `copy()` | Create deep copy |
+| `get_source(key)` | Get value source |
+| `load_config()` | Helper function for quick loading |
+| `create_sample_config()` | Create example file |
 
 ## Enums
 
 ```python
 from nono.config import ConfigSource, ConfigFormat
 
-# Fuentes de configuración
-ConfigSource.DEFAULT      # Valor por defecto
-ConfigSource.FILE         # Archivo de configuración
-ConfigSource.ENVIRONMENT  # Variable de entorno
-ConfigSource.ARGUMENT     # Argumento programático
+# Configuration sources
+ConfigSource.DEFAULT      # Default value
+ConfigSource.FILE         # Configuration file
+ConfigSource.ENVIRONMENT  # Environment variable
+ConfigSource.ARGUMENT     # Programmatic argument
 
-# Formatos de archivo
+# File formats
 ConfigFormat.JSON
 ConfigFormat.YAML
 ConfigFormat.TOML
 ```
 
-## Integración con CLI
+## CLI Integration
 
-El módulo de configuración se integra con el [módulo CLI](README_cli.md) para proporcionar una experiencia unificada.
+The configuration module integrates with the [CLI module](README_cli.md) to provide a unified experience.
 
-### Carga de Configuración en CLI
+### Configuration Loading in CLI
 
-El CLI puede cargar configuración desde:
+The CLI can load configuration from:
 
-1. **Archivo de configuración** vía `--config-file`
-2. **Variables de entorno** con prefijo `NONO_`
-3. **Argumentos de línea de comandos** (máxima prioridad)
+1. **Configuration file** via `--config-file`
+2. **Environment variables** with prefix `NONO_`
+3. **Command line arguments** (maximum priority)
 
 ```bash
-# CLI con configuración externa
-python -m nono.cli --config-file config.toml --provider gemini --prompt "Hola"
+# CLI with external configuration
+python -m nono.cli --config-file config.toml --provider gemini --prompt "Hello"
 ```
 
-### Uso Programático Conjunto
+### Joint Programmatic Usage
 
 ```python
 from nono.config import load_config
 from nono.cli import CLIBase, print_info
 
-# Cargar configuración
+# Load configuration
 config = load_config(filepath='config.toml', env_prefix='NONO_')
 
-# Crear CLI con valores de config
+# Create CLI with config values
 cli = CLIBase(
-    prog="mi_herramienta",
+    prog="my_tool",
     version=config.get('app.version', '1.0.0')
 )
 
-# Los argumentos del CLI tienen prioridad sobre config
+# CLI arguments have priority over config
 args = cli.parse_args()
 
-# Fusionar: args sobreescriben config
+# Merge: args override config
 config.load_args(vars(args))
 
-# Ahora config tiene la prioridad correcta:
+# Now config has correct priority:
 # args > env > file > defaults
 model = config['google.default_model']
-print_info(f"Usando modelo: {model}")
+print_info(f"Using model: {model}")
 ```
 
-### Diagrama de Flujo
+### Flow Diagram
 
 ```
 ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
@@ -406,17 +406,17 @@ print_info(f"Usando modelo: {model}")
                                             │
                                             v
                                    ┌─────────────┐
-                                   │  CLI Args   │  <- Máxima prioridad
+                                   │  CLI Args   │  <- Maximum priority
                                    └─────────────┘
                                             │
                                             v
                                    ┌─────────────┐
-                                   │   Config    │  <- Valor final
+                                   │   Config    │  <- Final value
                                    └─────────────┘
 ```
 
-📖 Ver también: [CLI Documentation](README_cli.md)
+📖 See also: [CLI Documentation](README_cli.md)
 
-## Autor
+## Author
 
 **DatamanEdge** - MIT License
