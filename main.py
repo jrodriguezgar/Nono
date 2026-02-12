@@ -19,11 +19,12 @@ Environment Variables:
 """
 
 import argparse
+import csv
 import json
 import sys
 import os
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -39,12 +40,115 @@ from nono.tasker import (
 )
 
 
+_MODEL_CATALOG_CACHE: Dict[str, List[str]] | None = None
+
+
+def _load_model_catalog() -> Dict[str, List[str]]:
+    """Load model catalog from connector CSV data.
+
+    Returns:
+        Dictionary mapping provider name to a sorted list of models.
+    """
+    global _MODEL_CATALOG_CACHE
+    if _MODEL_CATALOG_CACHE is not None:
+        return _MODEL_CATALOG_CACHE
+
+    catalog: Dict[str, List[str]] = {}
+    csv_path = Path(__file__).parent / "nono" / "connector" / "model_features.csv"
+
+    if not csv_path.exists():
+        _MODEL_CATALOG_CACHE = catalog
+        return catalog
+
+    with csv_path.open("r", encoding="utf-8") as file_handle:
+        reader = csv.DictReader(file_handle, delimiter="\t")
+        for row in reader:
+            provider = (row.get("provider") or "").strip().lower()
+            model = (row.get("model") or "").strip()
+
+            if not provider or not model:
+                continue
+
+            catalog.setdefault(provider, []).append(model)
+
+    for provider, models in catalog.items():
+        catalog[provider] = sorted(set(models))
+
+    _MODEL_CATALOG_CACHE = catalog
+    return catalog
+
+
+def get_available_providers() -> List[str]:
+    """Get available providers from catalog or enum fallback.
+
+    Returns:
+        Sorted list of provider names.
+    """
+    catalog = _load_model_catalog()
+    provider_values = sorted({provider.value for provider in AIProvider})
+
+    if catalog:
+        catalog_providers = sorted([name for name in catalog.keys() if name in provider_values])
+        if catalog_providers:
+            return catalog_providers
+
+    return provider_values
+
+
+def get_models_for_provider(provider: str) -> List[str]:
+    """Get known models for a provider from the catalog.
+
+    Args:
+        provider: Provider name.
+
+    Returns:
+        Sorted list of models or an empty list if unknown.
+    """
+    return _load_model_catalog().get(provider.lower(), [])
+
+
+def get_default_model(provider: str) -> str:
+    """Resolve the default model for a provider.
+
+    Args:
+        provider: Provider name.
+
+    Returns:
+        Default model name.
+    """
+    config = NonoConfig.get_all_config()
+    file_config = config.get("config_file", {})
+    provider_key = provider.lower()
+
+    if isinstance(file_config, dict):
+        provider_config = file_config.get(provider_key, {})
+        if isinstance(provider_config, dict):
+            model_name = provider_config.get("default_model")
+            if model_name:
+                return model_name
+
+    models = get_models_for_provider(provider_key)
+    if models:
+        return models[0]
+
+    return "gemini-3-flash-preview"
+
+
 def list_providers() -> None:
-    """List all available AI providers."""
-    print("\n📦 Available AI Providers:")
-    print("─" * 40)
-    for provider in AIProvider:
-        print(f"  • {provider.value}")
+    """List all available AI providers and known models."""
+    providers = get_available_providers()
+    catalog = _load_model_catalog()
+
+    print("\nAvailable AI Providers:")
+    print("-" * 40)
+    for provider in providers:
+        models = catalog.get(provider, [])
+        if models:
+            print(f"  - {provider} ({len(models)} models)")
+            for model in models:
+                print(f"      * {model}")
+        else:
+            print(f"  - {provider}")
     print()
 
 
@@ -247,8 +351,15 @@ def interactive_mode() -> None:
             print("\n👋 Goodbye!\n")
             break
         elif choice == "1":
-            provider = input("  Provider (gemini/openai/perplexity/deepseek/grok/ollama): ").strip() or "gemini"
-            model = input("  Model (leave empty for default): ").strip() or "gemini-3-flash-preview"
+            providers = get_available_providers()
+            provider_hint = "/".join(providers) if providers else "gemini"
+            provider = input(f"  Provider ({provider_hint}): ").strip() or "gemini"
+
+            models = get_models_for_provider(provider)
+            default_model = get_default_model(provider)
+            if models:
+                print(f"  Known models: {', '.join(models)}")
+            model = input(f"  Model (default: {default_model}): ").strip() or default_model
             prompt = input("  Prompt: ").strip()
             if prompt:
                 run_simple_prompt(provider, model, prompt)
@@ -293,7 +404,7 @@ Examples:
     
     parser.add_argument("--version", "-v", action="version", version=f"Nono v{__version__}")
     parser.add_argument("--provider", "-p", default="gemini", help="AI provider (default: gemini)")
-    parser.add_argument("--model", "-m", default="gemini-3-flash-preview", help="Model name")
+    parser.add_argument("--model", "-m", default=None, help="Model name")
     parser.add_argument("--prompt", help="Simple prompt to execute")
     parser.add_argument("--system", help="System prompt (optional)")
     parser.add_argument("--task", "-t", help="Task definition JSON file")
@@ -311,7 +422,8 @@ Examples:
     elif args.list_tasks:
         list_tasks()
     elif args.prompt:
-        run_simple_prompt(args.provider, args.model, args.prompt, args.system)
+        model = args.model or get_default_model(args.provider)
+        run_simple_prompt(args.provider, model, args.prompt, args.system)
     elif args.task and args.data:
         run_task(args.task, args.data)
     else:

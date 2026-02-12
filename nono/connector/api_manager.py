@@ -494,6 +494,34 @@ class AIProviderPresets:
         )
     
     @staticmethod
+    def cerebras() -> RateLimitConfig:
+        """Cerebras API typical limits (free tier - 1M tokens/day)."""
+        return RateLimitConfig(
+            rpm=30,
+            tpd=1000000,
+            action=RateLimitExceededAction.WAIT
+        )
+    
+    @staticmethod
+    def nvidia() -> RateLimitConfig:
+        """NVIDIA NIM API typical limits."""
+        return RateLimitConfig(
+            rpm=60,
+            tpm=100000,
+            action=RateLimitExceededAction.WAIT
+        )
+    
+    @staticmethod
+    def foundry() -> RateLimitConfig:
+        """Microsoft Foundry (GitHub Models) API typical limits (Copilot Free tier)."""
+        return RateLimitConfig(
+            rpm=15,
+            rpd=150,
+            tpm=120000,
+            action=RateLimitExceededAction.WAIT
+        )
+    
+    @staticmethod
     def ollama_local() -> RateLimitConfig:
         """Ollama local - no real limits, but prevent overload."""
         return RateLimitConfig(

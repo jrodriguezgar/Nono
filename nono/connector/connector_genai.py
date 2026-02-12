@@ -2,7 +2,8 @@
 Connector Gen AI - Unified Generative AI Services Connector
 
 Provides a unified interface for connecting to multiple generative AI services
-including OpenAI, Google Gemini, Perplexity, DeepSeek, Grok (xAI), Groq, and Ollama.
+including OpenAI, Google Gemini, Perplexity, DeepSeek, Grok (xAI), Groq, Cerebras,
+NVIDIA, Microsoft Foundry, Vercel AI SDK, and Ollama.
 Features built-in rate limiting (Token Bucket), SSL configuration management,
 and auto-installation of required dependencies.
 
@@ -13,6 +14,10 @@ Supported Providers:
     - DeepSeekService: DeepSeek Chat, DeepSeek Coder
     - GrokService: Grok-1 (xAI)
     - GroqService: LLaMA, Qwen, Kimi via Groq's ultra-fast LPU inference
+    - CerebrasService: LLaMA models via Cerebras Wafer-Scale Engine
+    - NvidiaService: Models via NVIDIA NIM inference platform
+    - FoundryService: Models via Microsoft Foundry (GitHub Models)
+    - VercelAIService: Provider-agnostic via Vercel AI SDK (OpenAI, Anthropic, Gemini)
     - OllamaService: Any locally hosted model
 
 Example:
@@ -1236,6 +1241,214 @@ class GroqService(OpenAICompatibleService):
         )
 
 
+class NvidiaService(OpenAICompatibleService):
+    """
+    NVIDIA AI service - Access to NVIDIA NIM models via OpenAI-compatible API.
+    
+    NVIDIA provides inference for a wide variety of models through their
+    NIM (NVIDIA Inference Microservice) platform.
+    
+    Supported models (as of 2026):
+        - qwen/qwq-32b: Qwen QWQ 32B
+        - meta/llama-3.3-70b-instruct: LLaMA 3.3 70B Instruct
+        - deepseek-ai/deepseek-r1: DeepSeek R1
+        - nvidia/llama-3.1-nemotron-70b-instruct: Nemotron 70B
+    
+    API Documentation: https://build.nvidia.com
+    
+    Usage:
+        >>> from connector_genai import NvidiaService
+        >>> client = NvidiaService(model_name="qwen/qwq-32b", api_key="nvapi-...")
+        >>> response = client.generate_completion(
+        ...     messages=[{"role": "user", "content": "Hello!"}]
+        ... )
+    """
+    _PROVIDER_NAME = "nvidia"
+
+    def __init__(self, model_name: str, 
+                 api_key: str | None = None,
+                 rate_limit_config: Optional[RateLimitConfig] = None):
+        """
+        Initialize NVIDIA NIM service.
+        
+        Args:
+            model_name: Model to use (e.g., 'qwen/qwq-32b')
+            api_key: NVIDIA API key (get from build.nvidia.com)
+            rate_limit_config: Rate limit configuration (loaded from CSV if None)
+        """
+        # Resolve API key if not provided
+        if api_key is None:
+            api_key = resolve_api_key_for_provider(self._PROVIDER_NAME)
+        
+        # Load rate limit from CSV if not provided
+        if rate_limit_config is None:
+            rate_limit_config = get_rate_limit_config(self._PROVIDER_NAME, model_name)
+        
+        super().__init__(
+            model_name,
+            api_key,
+            "https://integrate.api.nvidia.com/v1",
+            get_prompt_size(self._PROVIDER_NAME, model_name),
+            rate_limit_config
+        )
+
+
+class CerebrasService(GenerativeAIService):
+    """
+    Cerebras AI service - Ultra-fast inference using Cerebras Wafer-Scale Engine.
+    
+    Cerebras provides extremely fast inference for open-source models using their
+    custom Wafer-Scale Engine hardware. Uses the native cerebras-cloud-sdk.
+    
+    Supported models (as of 2026):
+        - gpt-oss-120b: GPT-OSS 120B (65K context)
+        - llama-3.3-70b: LLaMA 3.3 70B (65K context)
+        - llama3.1-8b: LLaMA 3.1 8B (8K context, lightweight)
+        - qwen-3-32b: Qwen 3 32B (65K context)
+        - zai-glm-4.7: ZAI-GLM 4.7 (64K context, preview)
+    
+    Rate Limits (free tier):
+        - Most models: 30 RPM, 14.4K RPD, 64K TPM, 1M TPD
+        - zai-glm-4.7 (preview): 10 RPM, 100 RPD, 60K TPM, 500K TPD
+        - See model_rate_limits.csv for detailed limits per model
+    
+    API Documentation: https://inference-docs.cerebras.ai
+    
+    Usage:
+        >>> from connector_genai import CerebrasService
+        >>> client = CerebrasService(model_name="llama-3.3-70b", api_key="csk-...")
+        >>> response = client.generate_completion(
+        ...     messages=[{"role": "user", "content": "Hello!"}]
+        ... )
+    """
+    _PROVIDER_NAME = "cerebras"
+
+    def __init__(self, model_name: str, 
+                 api_key: str | None = None,
+                 rate_limit_config: Optional[RateLimitConfig] = None):
+        """
+        Initialize Cerebras service.
+        
+        Args:
+            model_name: Model to use (e.g., 'llama-3.3-70b')
+            api_key: Cerebras API key (get from cloud.cerebras.ai)
+            rate_limit_config: Rate limit configuration (loaded from CSV if None)
+        """
+        # Resolve API key if not provided
+        if api_key is None:
+            api_key = resolve_api_key_for_provider(self._PROVIDER_NAME)
+        
+        # Load rate limit from CSV if not provided
+        if rate_limit_config is None:
+            rate_limit_config = get_rate_limit_config(self._PROVIDER_NAME, model_name)
+        
+        super().__init__(
+            model_name,
+            get_prompt_size(self._PROVIDER_NAME, model_name),
+            api_key,
+            rate_limit_config
+        )
+
+        # Lazy: SDK client created on first generate_completion call
+        self.client = None
+
+    def _ensure_client(self) -> None:
+        """Lazy initialization of the Cerebras SDK client."""
+        if self.client is not None:
+            return
+        
+        if not install_library("cerebras.cloud.sdk", package_name="cerebras-cloud-sdk"):
+            raise ImportError(
+                "The 'cerebras-cloud-sdk' library is required for CerebrasService "
+                "and could not be installed."
+            )
+
+        from cerebras.cloud.sdk import Cerebras
+        self.client = Cerebras(api_key=self._api_key)
+
+    def generate_completion(self, messages: list[dict[str, str]], 
+                          temperature: float | str = 0.7,
+                          max_tokens: int | None = None,
+                          top_p: float | None = None,
+                          frequency_penalty: float | None = None,
+                          presence_penalty: float | None = None,
+                          stop: list[str] | None = None,
+                          response_format: ResponseFormat = ResponseFormat.JSON,
+                          json_schema: dict | None = None,
+                          use_case: str | None = None,
+                          **kwargs) -> str:
+        """
+        Generate a completion using the Cerebras SDK.
+        
+        Args:
+            messages: List of message dictionaries with 'role' and 'content'
+            temperature: Temperature value or use case name (e.g., 'coding', 'creative')
+            max_tokens: Maximum number of completion tokens
+            top_p: Top-p sampling parameter
+            frequency_penalty: Frequency penalty (not supported by Cerebras, ignored)
+            presence_penalty: Presence penalty (not supported by Cerebras, ignored)
+            stop: Stop sequences
+            response_format: ResponseFormat.JSON or ResponseFormat.TEXT
+            json_schema: JSON schema for structured output
+            use_case: Use case name for automatic temperature selection
+        
+        Returns:
+            Generated text response
+        """
+        self._ensure_client()
+        temperature = self._resolve_temperature(temperature)
+        
+        # Format messages for response format
+        if response_format == ResponseFormat.JSON and json_schema:
+            processed_messages = [msg.copy() for msg in messages]
+        else:
+            processed_messages = self._format_messages_for_response(messages, response_format, json_schema)
+        
+        # Ensure system message exists
+        if not any(msg.get("role") == "system" for msg in processed_messages):
+            processed_messages.insert(0, {"role": "system", "content": "You are a helpful assistant."})
+        
+        self._validate_messages_length(processed_messages)
+        self.rate_limiter.wait_for_permit()
+
+        # Build SDK call parameters
+        sdk_params: dict[str, Any] = {
+            "model": self.model_name,
+            "messages": processed_messages,
+            "temperature": temperature,
+            "stream": False,
+        }
+        
+        if max_tokens is not None:
+            sdk_params["max_completion_tokens"] = max_tokens
+        if top_p is not None:
+            sdk_params["top_p"] = top_p
+        if stop is not None:
+            sdk_params["stop"] = stop
+        
+        # Handle JSON response format
+        if response_format == ResponseFormat.JSON:
+            if json_schema:
+                json_schema = convert_json_schema(json_schema)
+                sdk_params["response_format"] = {
+                    "type": "json_schema",
+                    "json_schema": {"schema": json_schema}
+                }
+            else:
+                sdk_params["response_format"] = {"type": "json_object"}
+
+        try:
+            completion = self.client.chat.completions.create(**sdk_params)
+            content = completion.choices[0].message.content or ""
+            content = content.strip()
+            if content.startswith("```json") and content.endswith("```"):
+                return content[len("```json"): -len("```")].strip()
+            return content
+        except Exception as e:
+            print(f"Error with Cerebras API: {e}")
+            raise
+
+
 class OpenRouterService(OpenAICompatibleService):
     """
     OpenRouter AI service - Unified access to 300+ AI models from multiple providers.
@@ -1700,7 +1913,7 @@ class GeminiService(GenerativeAIService):
     This service uses the modern google-genai package (google.genai) which replaces
     the deprecated google-generativeai package.
     """
-    _PROVIDER_NAME = "gemini"
+    _PROVIDER_NAME = "google"
     _DEFAULT_RPM = 15  # 15 requests/min for most Gemini models
 
     def __init__(self, model_name: str, api_key: str | None = None,
@@ -1827,6 +2040,425 @@ class GeminiService(GenerativeAIService):
             return response.text or ""
         except Exception as e:
             print(f"An error occurred with the Gemini API: {e}")
+            raise
+
+
+class FoundryService(GenerativeAIService):
+    """
+    Microsoft Foundry Models service - Access to GitHub-hosted AI models.
+    
+    Provides access to models hosted on Microsoft Foundry (GitHub Models)
+    using the azure-ai-inference SDK.
+    
+    Supported models (as of 2026):
+        - openai/gpt-5: GPT-5
+        - openai/gpt-4o: GPT-4o
+        - meta-llama/llama-3.3-70b-instruct: LLaMA 3.3 70B
+        - deepseek/deepseek-r1: DeepSeek R1
+        - mistralai/mistral-large-2411: Mistral Large
+    
+    Rate Limits:
+        - See model_rate_limits.csv for detailed limits per model
+    
+    API Documentation: https://docs.github.com/en/github-models
+    
+    Usage:
+        >>> from connector_genai import FoundryService
+        >>> client = FoundryService(model_name="openai/gpt-5", api_key="ghp_...")
+        >>> response = client.generate_completion(
+        ...     messages=[{"role": "user", "content": "Hello!"}]
+        ... )
+    """
+    _PROVIDER_NAME = "foundry"
+    _DEFAULT_ENDPOINT = "https://models.github.ai/inference"
+
+    def __init__(self, model_name: str,
+                 api_key: str | None = None,
+                 endpoint: str | None = None,
+                 rate_limit_config: Optional[RateLimitConfig] = None):
+        """
+        Initialize Microsoft Foundry Models service.
+        
+        Args:
+            model_name: Model to use (e.g., 'openai/gpt-5')
+            api_key: GitHub token or Azure key (uses GITHUB_TOKEN env var if None)
+            endpoint: API endpoint (defaults to https://models.github.ai/inference)
+            rate_limit_config: Rate limit configuration (loaded from CSV if None)
+        """
+        # Resolve API key: try provider key, then GITHUB_TOKEN env var
+        if api_key is None:
+            try:
+                api_key = resolve_api_key_for_provider(self._PROVIDER_NAME)
+            except (ValueError, KeyError):
+                import os
+                api_key = os.environ.get("GITHUB_TOKEN")
+                if not api_key:
+                    raise ValueError(
+                        "No API key found for Foundry. Set GITHUB_TOKEN env var "
+                        "or add 'foundry' entry to apikeys.csv."
+                    )
+        
+        self._endpoint = endpoint or self._DEFAULT_ENDPOINT
+        
+        # Load rate limit from CSV if not provided
+        if rate_limit_config is None:
+            rate_limit_config = get_rate_limit_config(self._PROVIDER_NAME, model_name)
+        
+        super().__init__(
+            model_name,
+            get_prompt_size(self._PROVIDER_NAME, model_name),
+            api_key,
+            rate_limit_config
+        )
+
+        # Lazy: SDK client created on first generate_completion call
+        self.client = None
+
+    def _ensure_client(self) -> None:
+        """Lazy initialization of the Azure AI Inference client."""
+        if self.client is not None:
+            return
+        
+        if not install_library("azure.ai.inference", package_name="azure-ai-inference"):
+            raise ImportError(
+                "The 'azure-ai-inference' library is required for FoundryService "
+                "and could not be installed."
+            )
+        
+        from azure.ai.inference import ChatCompletionsClient
+        from azure.core.credentials import AzureKeyCredential
+        
+        self.client = ChatCompletionsClient(
+            endpoint=self._endpoint,
+            credential=AzureKeyCredential(self._api_key),
+        )
+
+    @property
+    def endpoint(self) -> str:
+        """Returns the API endpoint URL."""
+        return self._endpoint
+
+    def get_config(self, include_api_key: bool = False, include_rate_stats: bool = False) -> dict:
+        """Returns extended configuration including endpoint."""
+        config_dict = super().get_config(include_api_key, include_rate_stats)
+        config_dict["endpoint"] = self.endpoint
+        return config_dict
+
+    def generate_completion(self, messages: list[dict[str, str]], 
+                          temperature: float | str = 0.7,
+                          max_tokens: int | None = None,
+                          top_p: float | None = None,
+                          frequency_penalty: float | None = None,
+                          presence_penalty: float | None = None,
+                          stop: list[str] | None = None,
+                          response_format: ResponseFormat = ResponseFormat.JSON,
+                          json_schema: dict | None = None,
+                          use_case: str | None = None,
+                          **kwargs) -> str:
+        """
+        Generate a completion using the Azure AI Inference SDK.
+        
+        Args:
+            messages: List of message dictionaries with 'role' and 'content'
+            temperature: Temperature value or use case name
+            max_tokens: Maximum number of completion tokens
+            top_p: Top-p sampling parameter
+            frequency_penalty: Frequency penalty
+            presence_penalty: Presence penalty
+            stop: Stop sequences
+            response_format: ResponseFormat.JSON or ResponseFormat.TEXT
+            json_schema: JSON schema for structured output
+            use_case: Use case name for automatic temperature selection
+        
+        Returns:
+            Generated text response
+        """
+        self._ensure_client()
+        temperature = self._resolve_temperature(temperature)
+        
+        from azure.ai.inference.models import (
+            SystemMessage, UserMessage, AssistantMessage
+        )
+        
+        # Format messages for response format
+        if response_format == ResponseFormat.JSON and json_schema:
+            processed_messages = [msg.copy() for msg in messages]
+        else:
+            processed_messages = self._format_messages_for_response(
+                messages, response_format, json_schema
+            )
+        
+        # Ensure system message exists
+        if not any(msg.get("role") == "system" for msg in processed_messages):
+            processed_messages.insert(0, {"role": "system", "content": "You are a helpful assistant."})
+        
+        self._validate_messages_length(processed_messages)
+        self.rate_limiter.wait_for_permit()
+
+        # Convert to Azure AI Inference message objects
+        sdk_messages = []
+        for msg in processed_messages:
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+            if role == "system":
+                sdk_messages.append(SystemMessage(content=content))
+            elif role == "assistant":
+                sdk_messages.append(AssistantMessage(content=content))
+            else:
+                sdk_messages.append(UserMessage(content=content))
+
+        # Build SDK call parameters
+        sdk_params: dict[str, Any] = {
+            "messages": sdk_messages,
+            "model": self.model_name,
+            "temperature": temperature,
+        }
+        
+        if max_tokens is not None:
+            sdk_params["max_tokens"] = max_tokens
+        if top_p is not None:
+            sdk_params["top_p"] = top_p
+        if frequency_penalty is not None:
+            sdk_params["frequency_penalty"] = frequency_penalty
+        if presence_penalty is not None:
+            sdk_params["presence_penalty"] = presence_penalty
+        if stop is not None:
+            sdk_params["stop"] = stop
+        
+        # Handle JSON response format
+        if response_format == ResponseFormat.JSON:
+            if json_schema:
+                json_schema = convert_json_schema(json_schema)
+                sdk_params["response_format"] = {
+                    "type": "json_schema",
+                    "json_schema": {"schema": json_schema}
+                }
+            else:
+                sdk_params["response_format"] = {"type": "json_object"}
+
+        try:
+            response = self.client.complete(**sdk_params)
+            content = response.choices[0].message.content or ""
+            content = content.strip()
+            if content.startswith("```json") and content.endswith("```"):
+                return content[len("```json"): -len("```")].strip()
+            return content
+        except Exception as e:
+            print(f"Error with Foundry Models API: {e}")
+            raise
+
+
+class VercelAIService(GenerativeAIService):
+    """
+    Vercel AI SDK service - Provider-agnostic AI interface.
+    
+    Wraps the Python port of Vercel's AI SDK (ai-sdk-python) providing
+    zero-configuration, provider-agnostic text and structured output generation.
+    Supports OpenAI, Anthropic, and Gemini providers through a unified API.
+    
+    Supported providers:
+        - openai: GPT-4o, GPT-4o-mini, GPT-5, etc.
+        - anthropic: Claude 3.5 Sonnet, Claude 3 Opus, etc.
+        - gemini: Gemini 1.5 Flash, Gemini 1.5 Pro, etc.
+    
+    Features:
+        - Provider-agnostic: swap providers without changing code
+        - Pydantic-based structured output via generate_object
+        - Streaming support via stream_text
+        - Built-in tool calling
+    
+    API Documentation: https://pythonaisdk.mintlify.app
+    
+    Usage:
+        >>> from connector_genai import VercelAIService
+        >>> client = VercelAIService(
+        ...     model_name="gpt-4o-mini",
+        ...     sdk_provider="openai",
+        ...     api_key="sk-..."
+        ... )
+        >>> response = client.generate_completion(
+        ...     messages=[{"role": "user", "content": "Hello!"}]
+        ... )
+    """
+    _PROVIDER_NAME = "vercel"
+    _SUPPORTED_SDK_PROVIDERS = ("openai", "anthropic", "gemini")
+
+    def __init__(self, model_name: str,
+                 sdk_provider: str = "openai",
+                 api_key: str | None = None,
+                 rate_limit_config: Optional[RateLimitConfig] = None,
+                 **model_kwargs: Any):
+        """
+        Initialize Vercel AI SDK service.
+        
+        Args:
+            model_name: Model to use (e.g., 'gpt-4o-mini', 'claude-3-sonnet-20240229')
+            sdk_provider: SDK provider name ('openai', 'anthropic', 'gemini')
+            api_key: API key for the chosen provider
+            rate_limit_config: Rate limit configuration
+            **model_kwargs: Extra kwargs passed to the SDK provider factory
+                           (e.g., temperature, top_p as defaults)
+        """
+        if sdk_provider not in self._SUPPORTED_SDK_PROVIDERS:
+            raise ValueError(
+                f"Unsupported SDK provider '{sdk_provider}'. "
+                f"Choose from: {', '.join(self._SUPPORTED_SDK_PROVIDERS)}"
+            )
+        
+        self._sdk_provider_name = sdk_provider
+        self._model_kwargs = model_kwargs
+        
+        # Resolve API key if not provided
+        if api_key is None:
+            try:
+                api_key = resolve_api_key_for_provider(sdk_provider)
+            except (ValueError, KeyError):
+                pass  # SDK will use env vars (OPENAI_API_KEY, etc.)
+        
+        super().__init__(
+            model_name,
+            get_prompt_size(self._PROVIDER_NAME, model_name),
+            api_key,
+            rate_limit_config
+        )
+
+        # Lazy: SDK model created on first generate_completion call
+        self._sdk_model = None
+
+    def _ensure_model(self) -> None:
+        """Lazy initialization of the Vercel AI SDK model."""
+        if self._sdk_model is not None:
+            return
+        
+        if not install_library("ai_sdk", package_name="ai-sdk-python"):
+            raise ImportError(
+                "The 'ai-sdk-python' library is required for VercelAIService "
+                "and could not be installed."
+            )
+        
+        import ai_sdk
+        
+        factory_kwargs: dict[str, Any] = {}
+        if self._api_key:
+            factory_kwargs["api_key"] = self._api_key
+        factory_kwargs.update(self._model_kwargs)
+        
+        if self._sdk_provider_name == "openai":
+            self._sdk_model = ai_sdk.openai(self.model_name, **factory_kwargs)
+        elif self._sdk_provider_name == "anthropic":
+            self._sdk_model = ai_sdk.anthropic(self.model_name, **factory_kwargs)
+        elif self._sdk_provider_name == "gemini":
+            self._sdk_model = ai_sdk.gemini(self.model_name, **factory_kwargs)
+
+    @property
+    def sdk_provider(self) -> str:
+        """Returns the SDK provider name."""
+        return self._sdk_provider_name
+
+    def get_config(self, include_api_key: bool = False, include_rate_stats: bool = False) -> dict:
+        """Returns extended configuration including SDK provider."""
+        config_dict = super().get_config(include_api_key, include_rate_stats)
+        config_dict["sdk_provider"] = self.sdk_provider
+        return config_dict
+
+    def generate_completion(self, messages: list[dict[str, str]], 
+                          temperature: float | str = 0.7,
+                          max_tokens: int | None = None,
+                          top_p: float | None = None,
+                          frequency_penalty: float | None = None,
+                          presence_penalty: float | None = None,
+                          stop: list[str] | None = None,
+                          response_format: ResponseFormat = ResponseFormat.JSON,
+                          json_schema: dict | None = None,
+                          use_case: str | None = None,
+                          **kwargs) -> str:
+        """
+        Generate a completion using the Vercel AI SDK.
+        
+        Args:
+            messages: List of message dictionaries with 'role' and 'content'
+            temperature: Temperature value or use case name
+            max_tokens: Maximum number of completion tokens
+            top_p: Top-p sampling parameter
+            frequency_penalty: Frequency penalty
+            presence_penalty: Presence penalty
+            stop: Stop sequences
+            response_format: ResponseFormat.JSON or ResponseFormat.TEXT
+            json_schema: JSON schema for structured output
+            use_case: Use case name for automatic temperature selection
+        
+        Returns:
+            Generated text response
+        """
+        self._ensure_model()
+        temperature = self._resolve_temperature(temperature)
+        
+        import ai_sdk
+        from ai_sdk.types import CoreSystemMessage, CoreUserMessage, CoreAssistantMessage
+        
+        # Format messages for response format
+        if response_format == ResponseFormat.JSON and json_schema:
+            processed_messages = [msg.copy() for msg in messages]
+        else:
+            processed_messages = self._format_messages_for_response(
+                messages, response_format, json_schema
+            )
+        
+        # Ensure system message exists
+        if not any(msg.get("role") == "system" for msg in processed_messages):
+            processed_messages.insert(0, {"role": "system", "content": "You are a helpful assistant."})
+        
+        self._validate_messages_length(processed_messages)
+        self.rate_limiter.wait_for_permit()
+
+        # Convert to Vercel AI SDK message objects
+        sdk_messages = []
+        system_prompt = None
+        for msg in processed_messages:
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+            if role == "system":
+                system_prompt = content
+            elif role == "assistant":
+                sdk_messages.append(CoreAssistantMessage(content=content))
+            else:
+                sdk_messages.append(CoreUserMessage(content=content))
+
+        # Build SDK call parameters
+        sdk_params: dict[str, Any] = {
+            "model": self._sdk_model,
+            "temperature": temperature,
+        }
+        
+        if system_prompt:
+            sdk_params["system"] = system_prompt
+        if sdk_messages:
+            sdk_params["messages"] = sdk_messages
+        if max_tokens is not None:
+            sdk_params["max_tokens"] = max_tokens
+        if top_p is not None:
+            sdk_params["top_p"] = top_p
+        if frequency_penalty is not None:
+            sdk_params["frequency_penalty"] = frequency_penalty
+        if presence_penalty is not None:
+            sdk_params["presence_penalty"] = presence_penalty
+        if stop is not None:
+            sdk_params["stop"] = stop
+        
+        # Handle JSON response format
+        if response_format == ResponseFormat.JSON:
+            if json_schema:
+                sdk_params["response_format"] = {"type": "json_object"}
+
+        try:
+            result = ai_sdk.generate_text(**sdk_params)
+            content = result.text or ""
+            content = content.strip()
+            if content.startswith("```json") and content.endswith("```"):
+                return content[len("```json"): -len("```")].strip()
+            return content
+        except Exception as e:
+            print(f"Error with Vercel AI SDK ({self._sdk_provider_name}): {e}")
             raise
 
 
@@ -2026,6 +2658,14 @@ def get_service_for_provider(
         return DeepSeekService(model_name=model, api_key=apikey, rate_limit_config=rate_limit_config)
     elif provider_lower == 'grok':
         return GrokService(model_name=model, api_key=apikey, rate_limit_config=rate_limit_config)
+    elif provider_lower == 'cerebras':
+        return CerebrasService(model_name=model, api_key=apikey, rate_limit_config=rate_limit_config)
+    elif provider_lower == 'nvidia':
+        return NvidiaService(model_name=model, api_key=apikey, rate_limit_config=rate_limit_config)
+    elif provider_lower == 'foundry':
+        return FoundryService(model_name=model, api_key=apikey, rate_limit_config=rate_limit_config)
+    elif provider_lower == 'vercel':
+        return VercelAIService(model_name=model, api_key=apikey, rate_limit_config=rate_limit_config)
     else:
         raise ValueError(f"Unsupported provider: {provider}")
 
