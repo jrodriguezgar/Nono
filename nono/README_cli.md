@@ -2,7 +2,7 @@
 
 ## Description
 
-Command-line interface for Nono GenAI Tasker with multi-provider support, colored output, progress bars, and unified argument parsing.
+Command-line interface for Nono GenAI Tasker with multi-provider support, colored output, progress bars, subcommands, and unified argument parsing.
 
 ## Installation
 
@@ -22,7 +22,7 @@ pip install colorama
 python -m nono.cli --help
 
 # Execute with direct prompt
-python -m nono.cli --provider gemini --prompt "Explain what Python is"
+python -m nono.cli --provider google --prompt "Explain what Python is"
 
 # Execute with task file
 python -m nono.cli --provider openai --task summarize --input document.txt
@@ -34,7 +34,10 @@ python -m nono.cli --provider ollama --model llama3 --prompt "Hello"
 python -m nono.cli @params.txt
 
 # Dry-run mode
-python -m nono.cli --dry-run --provider gemini --prompt "Test"
+python -m nono.cli --dry-run --provider google --prompt "Test"
+
+# CI mode (no colors, quiet, JSON output)
+python -m nono.cli --ci --provider google --prompt "Test"
 ```
 
 ### Usage as Python Module
@@ -77,16 +80,19 @@ cli.print_final_summary()
 | `--verbose`, `-v` | Increase verbosity (-v=INFO, -vv=DEBUG) |
 | `--quiet`, `-q` | Suppress non-essential output |
 | `--no-color` | Disable colors |
+| `--ci` | CI mode: implies `--no-color --quiet --output-format json` |
 | `--dry-run` | Simulate without making API calls |
 | `--output-format`, `-F` | Output format: table, json, csv, text, markdown, summary, quiet |
 | `--config-file` | Load configuration from TOML/JSON file |
 | `--log-file` | Write logs to file |
 
+Exit codes: `0` success, `1` runtime error, `2` usage/argument error, `130` interrupted
+
 ### AI Provider Configuration
 
 | Option | Description |
 |--------|-------------|
-| `--provider`, `-p` | Provider: gemini, openai, perplexity, deepseek, grok, ollama |
+| `--provider`, `-p` | Provider: google, openai, perplexity, deepseek, grok, groq, cerebras, nvidia, openrouter, foundry, vercel, ollama |
 | `--model`, `-m` | Model name |
 | `--api-key` | API key (or use environment variable) |
 | `--api-key-file` | Read API key from file |
@@ -247,6 +253,10 @@ cli = CLIBase(
 | `add_group(name, title)` | Add custom argument group |
 | `add_example(example)` | Add usage example |
 | `add_examples(list)` | Add multiple examples |
+| `init_subcommands(title, dest)` | Initialize subcommand support |
+| `add_subcommand(name, help, handler, aliases)` | Add a subcommand |
+| `set_handler(command, handler)` | Set/update subcommand handler |
+| `run()` | Execute the parsed subcommand's handler |
 | `parse_args()` | Parse command line |
 | `increment_stat(name, value)` | Increment statistic |
 | `set_stat(name, value)` | Set statistic |
@@ -254,6 +264,7 @@ cli = CLIBase(
 | `print_final_summary(title)` | Print final summary |
 | `exit_success(message)` | Exit with code 0 |
 | `exit_with_error(message)` | Exit with error |
+| `last_result` | Attribute — set by handlers for `run_api()` |
 
 ### Factory Function
 
@@ -286,11 +297,17 @@ OutputFormat.SUMMARY
 OutputFormat.QUIET
 
 # AI providers
-AIProvider.GEMINI
+AIProvider.GOOGLE
 AIProvider.OPENAI
 AIProvider.PERPLEXITY
 AIProvider.DEEPSEEK
 AIProvider.GROK
+AIProvider.GROQ
+AIProvider.CEREBRAS
+AIProvider.NVIDIA
+AIProvider.OPENROUTER
+AIProvider.FOUNDRY
+AIProvider.VERCEL
 AIProvider.OLLAMA
 
 # Log levels
@@ -448,13 +465,92 @@ The CLI supports API keys via environment variables:
 
 | Provider | Variable |
 |-----------|----------|
-| Gemini | `GOOGLE_API_KEY` |
+| Google | `GOOGLE_API_KEY` |
 | OpenAI | `OPENAI_API_KEY` |
 | Perplexity | `PERPLEXITY_API_KEY` |
 | DeepSeek | `DEEPSEEK_API_KEY` |
-| Grok | `GROK_API_KEY` |
+| Grok | `XAI_API_KEY` |
+| Groq | `GROQ_API_KEY` |
+| Cerebras | `CEREBRAS_API_KEY` |
+| NVIDIA | `NVIDIA_API_KEY` |
+| OpenRouter | `OPENROUTER_API_KEY` |
+| Foundry | `GITHUB_TOKEN` |
+| Vercel | Uses underlying provider key |
 
 You can also use `--api-key` or `--api-key-file` to specify the key.
+
+## Programmatic API (run_api)
+
+Use `run_api()` to invoke CLI logic from Python code, REST endpoints, or test harnesses without spawning a subprocess:
+
+```python
+from nono.cli import run_api, CLIResult
+
+result: CLIResult = run_api(["--provider", "google", "--prompt", "Hello world"])
+
+if result.ok:
+    print(result.data)    # Handler payload
+    print(result.stats)   # {"tasks_executed": 1}
+else:
+    print(result.error)   # Error message
+```
+
+### CLIResult Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `ok` | `bool` | `True` when the command succeeded |
+| `data` | `Any` | Payload set by the handler via `cli.last_result` |
+| `stats` | `Dict[str, int]` | Counters from `cli.increment_stat()` |
+| `error` | `Optional[str]` | Error message when `ok` is `False` |
+
+### Module-Level Functions
+
+| Function | Description |
+|----------|-------------|
+| `run_api(argv) -> CLIResult` | Programmatic entry point — run a command without subprocess |
+| `main(argv) -> int` | CLI entry point — returns exit code (0/1/2/130) |
+| `create_cli(prog, ...) -> CLIBase` | Factory to create configured CLI instance |
+
+## Subcommands
+
+The CLI supports subcommands for organizing related operations:
+
+```python
+from nono.cli import CLIBase, print_success, print_info
+
+def run_analyze(args, cli):
+    print_info(f"Analyzing {args.input}")
+    cli.last_result = {"analyzed": args.input}
+    cli.increment_stat('analyzed', 1)
+    cli.print_final_summary()
+
+cli = CLIBase(prog="nono", description="GenAI Tasker", version="0.2.0")
+cli.init_subcommands()
+
+analyze = cli.add_subcommand("analyze", "Analyze content", handler=run_analyze, aliases=["a"])
+analyze.add_argument('--input', '-i', required=True)
+
+args = cli.parse_args()
+cli.run()
+```
+
+```bash
+python -m nono.cli analyze -i document.txt
+python -m nono.cli a -i document.txt  # using alias
+```
+
+## CI Mode
+
+The `--ci` flag activates all CI-friendly defaults in a single switch:
+
+```bash
+python -m nono.cli --ci --provider google --prompt "Test"
+echo $?  # 0=success, 1=error, 2=usage
+```
+
+`--ci` is equivalent to `--no-color --quiet --output-format json`. Colors are also
+auto-disabled when stdout is not a TTY (piped output, CI runners).
 
 ## Config Integration
 

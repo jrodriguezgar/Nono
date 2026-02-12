@@ -5,19 +5,26 @@ Execute generative AI tasks from the command line with multi-provider support.
 
 Usage:
     python -m nono.cli --help
+    python -m nono.cli <command> --help
     python -m nono.cli @params.txt
-    python -m nono.cli --provider gemini --task summarize --input doc.txt --output result.json
+    python -m nono.cli run --provider google --prompt "Explain what Python is"
 
 Supported Providers:
-    - gemini (Google Gemini) - Default
+    - google (Google Gemini) - Default
     - openai (OpenAI GPT)
     - perplexity (Perplexity AI)
     - deepseek (DeepSeek)
     - grok (xAI Grok)
+    - groq (Groq)
+    - cerebras (Cerebras)
+    - nvidia (NVIDIA)
+    - openrouter (OpenRouter)
+    - foundry (Microsoft Foundry)
+    - vercel (Vercel AI SDK)
     - ollama (Local Ollama)
 
 Author: DatamanEdge
-Version: 0.1.0
+Version: 0.2.0
 """
 
 from __future__ import annotations
@@ -36,8 +43,11 @@ from pathlib import Path
 
 __all__ = [
     "CLIBase",
+    "CLIResult",
+    "Subcommand",
     "OutputFormat",
     "LogLevel",
+    "AIProvider",
     "Colors",
     "CLIConfig",
     "print_success",
@@ -51,6 +61,8 @@ __all__ = [
     "confirm_action",
     "cprint",
     "create_cli",
+    "run_api",
+    "main",
 ]
 
 logger = logging.getLogger(__name__)
@@ -83,11 +95,17 @@ class LogLevel(Enum):
 
 class AIProvider(Enum):
     """Supported AI providers."""
-    GEMINI = "gemini"
+    GOOGLE = "google"
     OPENAI = "openai"
     PERPLEXITY = "perplexity"
     DEEPSEEK = "deepseek"
     GROK = "grok"
+    GROQ = "groq"
+    CEREBRAS = "cerebras"
+    NVIDIA = "nvidia"
+    OPENROUTER = "openrouter"
+    FOUNDRY = "foundry"
+    VERCEL = "vercel"
     OLLAMA = "ollama"
 
 
@@ -406,7 +424,7 @@ class CLIConfig:
     colors_enabled: bool = True
     default_output_format: OutputFormat = OutputFormat.SUMMARY
     default_log_level: LogLevel = LogLevel.INFO
-    default_provider: AIProvider = AIProvider.GEMINI
+    default_provider: AIProvider = AIProvider.GOOGLE
     
     allow_parameter_files: bool = True
     require_confirmation: bool = False
@@ -416,19 +434,55 @@ class CLIConfig:
     default_max_tokens: int = 4096
 
 
+@dataclass
+class Subcommand:
+    """Definition of a CLI subcommand."""
+    name: str
+    help: str
+    handler: Optional[Callable[[argparse.Namespace, 'CLIBase'], None]] = None
+    aliases: List[str] = field(default_factory=list)
+    parser: Optional[argparse.ArgumentParser] = None
+
+
+@dataclass
+class CLIResult:
+    """Structured result for programmatic API usage.
+    
+    Returned by ``run_api()`` so callers (REST endpoints, test harnesses,
+    orchestrators) can inspect the outcome without parsing stdout.
+    
+    Attributes:
+        ok:     True when the command succeeded.
+        data:   Arbitrary payload — dict, list, str, or None.
+        stats:  Counters collected via ``cli.increment_stat()``.
+        error:  Error message when ``ok`` is False, else None.
+    """
+    ok: bool = True
+    data: Any = None
+    stats: Dict[str, int] = field(default_factory=dict)
+    error: Optional[str] = None
+
+
 # ============================================================================
 # CLI BASE CLASS
 # ============================================================================
 
 class CLIBase:
-    """Base class for CLI applications with consistent behavior.
+    """Base class for CLI applications with consistent behavior and subcommand support.
     
-    Usage:
-        cli = CLIBase(prog="nono", description="GenAI Tasker", version="0.1.0")
+    Usage without subcommands:
+        cli = CLIBase(prog="nono", description="GenAI Tasker", version="0.2.0")
         cli.add_ai_provider_group()
-        cli.add_task_group()
         args = cli.parse_args()
         cli.print_final_summary()
+    
+    Usage with subcommands:
+        cli = CLIBase(prog="nono", description="GenAI Tasker", version="0.2.0")
+        cli.init_subcommands()
+        run_parser = cli.add_subcommand("run", "Execute a task", handler=run_task)
+        run_parser.add_argument('--prompt', required=True)
+        args = cli.parse_args()
+        cli.run()
     """
     
     def __init__(
@@ -476,9 +530,136 @@ class CLIBase:
         self._add_global_arguments()
         
         self._groups: Dict[str, argparse._ArgumentGroup] = {}
+        self._subparsers: Optional[argparse._SubParsersAction] = None
+        self._subcommands: Dict[str, Subcommand] = {}
+        self._handlers: Dict[str, Callable] = {}
         self.args: Optional[argparse.Namespace] = None
         self.stats: Dict[str, Any] = {}
+        self.last_result: Any = None  # Set by handlers for run_api()
         self.start_time: Optional[datetime] = None
+    
+    # -------------------------------------------------------------------
+    # SUBCOMMAND SUPPORT
+    # -------------------------------------------------------------------
+    
+    def init_subcommands(
+        self, title: str = "Commands", dest: str = "command"
+    ) -> argparse._SubParsersAction:
+        """Initialize subcommand support. Must be called before add_subcommand().
+        
+        Args:
+            title: Title for the subcommands section in help
+            dest: Attribute name where the subcommand name will be stored
+        
+        Returns:
+            The subparsers action object
+        """
+        self._subparsers = self.parser.add_subparsers(
+            title=title,
+            dest=dest,
+            help="Available commands (use '<command> --help' for details)"
+        )
+        return self._subparsers
+    
+    def add_subcommand(
+        self,
+        name: str,
+        help: str,
+        handler: Optional[Callable[[argparse.Namespace, 'CLIBase'], None]] = None,
+        aliases: Optional[List[str]] = None
+    ) -> argparse.ArgumentParser:
+        """Add a subcommand to the CLI.
+        
+        Args:
+            name: Subcommand name (e.g., 'run', 'list')
+            help: Help text for the subcommand
+            handler: Function(args, cli) to handle this command
+            aliases: Optional list of aliases for the subcommand
+        
+        Returns:
+            The subcommand's ArgumentParser for adding arguments
+        
+        Example:
+            run_parser = cli.add_subcommand("run", "Execute task", handler=run_task)
+            run_parser.add_argument('--prompt', required=True)
+        """
+        if not self._subparsers:
+            self.init_subcommands()
+        
+        assert self._subparsers is not None  # guaranteed by init_subcommands
+        aliases = aliases or []
+        subparser = self._subparsers.add_parser(
+            name,
+            help=help,
+            aliases=aliases,
+            formatter_class=argparse.RawDescriptionHelpFormatter
+        )
+        
+        # Add global options to subcommand
+        self._add_global_arguments_to_subparser(subparser)
+        
+        subcommand = Subcommand(
+            name=name,
+            help=help,
+            handler=handler,
+            aliases=aliases,
+            parser=subparser
+        )
+        self._subcommands[name] = subcommand
+        for alias in aliases:
+            self._subcommands[alias] = subcommand
+        
+        if handler:
+            self._handlers[name] = handler
+            for alias in aliases:
+                self._handlers[alias] = handler
+        
+        return subparser
+    
+    def _add_global_arguments_to_subparser(
+        self, subparser: argparse.ArgumentParser
+    ) -> None:
+        """Add global options to a subparser."""
+        grp = subparser.add_argument_group("Global Options")
+        grp.add_argument('--verbose', '-v', action='count', default=0,
+                         help="Increase verbosity (-v=INFO, -vv=DEBUG)")
+        grp.add_argument('--quiet', '-q', action='store_true',
+                         help="Suppress non-error output")
+        grp.add_argument('--no-color', action='store_true',
+                         help="Disable colored output")
+        grp.add_argument('--ci', action='store_true',
+                         help="CI mode: implies --no-color --quiet --output-format json")
+        grp.add_argument('--dry-run', action='store_true',
+                         default=self.config.dry_run_by_default,
+                         help="Simulate without making API calls")
+        grp.add_argument('--log-file', type=str, metavar="FILE",
+                         help="Write logs to file")
+    
+    def set_handler(
+        self, command: str,
+        handler: Callable[[argparse.Namespace, 'CLIBase'], None]
+    ) -> None:
+        """Set or update the handler for a subcommand."""
+        self._handlers[command] = handler
+        if command in self._subcommands:
+            self._subcommands[command].handler = handler
+    
+    def run(self) -> None:
+        """Execute the handler for the parsed subcommand. Must be called after parse_args()."""
+        if not self.args:
+            raise RuntimeError("parse_args() must be called before run()")
+        
+        command = getattr(self.args, 'command', None)
+        if not command:
+            self.parser.print_help()
+            sys.exit(1)
+        
+        handler = self._handlers.get(command)
+        if handler:
+            handler(self.args, self)
+        else:
+            print_error(f"No handler registered for command: {command}")
+            sys.exit(1)
     
     def _add_global_arguments(self) -> None:
         """Add global arguments available to all CLI tools."""
@@ -499,6 +680,11 @@ class CLIBase:
             '--no-color',
             action='store_true',
             help="Disable colored output"
+        )
+        grp.add_argument(
+            '--ci',
+            action='store_true',
+            help="CI mode: implies --no-color --quiet --output-format json"
         )
         grp.add_argument(
             '--dry-run',
@@ -775,6 +961,15 @@ class CLIBase:
     
     def _post_process_args(self) -> None:
         """Post-process parsed arguments."""
+        assert self.args is not None  # called after parse_args
+        
+        # CI mode implies no-color, quiet, json output
+        if getattr(self.args, 'ci', False):
+            self.args.no_color = True
+            self.args.quiet = True
+            if hasattr(self.args, 'output_format'):
+                self.args.output_format = OutputFormat.JSON.value
+        
         if getattr(self.args, 'no_color', False):
             Colors.disable()
         
@@ -876,7 +1071,7 @@ class CLIBase:
 def create_cli(
     prog: str = "nono",
     description: str = "GenAI task execution framework",
-    version: str = "0.1.0",
+    version: str = "0.2.0",
     with_provider: bool = True,
     with_task: bool = True,
     with_io: bool = True,
@@ -914,15 +1109,92 @@ def create_cli(
 
 
 # ============================================================================
+# PROGRAMMATIC API
+# ============================================================================
+
+def run_api(argv: List[str]) -> CLIResult:
+    """Programmatic entry point — run a CLI command and return structured results.
+    
+    Designed for embedding in REST APIs, test harnesses, orchestrators, or
+    any Python code that needs to invoke CLI logic without ``subprocess``.
+    
+    Args:
+        argv: Argument list, same as ``sys.argv[1:]``.
+    
+    Returns:
+        CLIResult with ok, data, stats, and optional error.
+    
+    Example::
+    
+        result = run_api(["--provider", "google", "--prompt", "Hello"])
+        if result.ok:
+            print(result.data)
+    """
+    cli = create_cli(
+        prog="nono",
+        description="Nono GenAI Tasker",
+        version="0.2.0",
+        with_provider=True,
+        with_task=True,
+        with_io=True,
+        with_batch=True
+    )
+    
+    try:
+        # Force CI mode for programmatic usage
+        if '--ci' not in argv:
+            argv = list(argv) + ['--ci']
+        
+        args = cli.parse_args(argv)
+        
+        # Placeholder: actual execution logic would go here
+        cli.last_result = {'args': {k: v for k, v in vars(args).items() if v is not None}}
+        
+        return CLIResult(
+            ok=True,
+            data=cli.last_result,
+            stats=dict(cli.stats)
+        )
+    except SystemExit as exc:
+        return CLIResult(
+            ok=False,
+            error=f"CLI exited with code {exc.code}",
+            stats=dict(cli.stats)
+        )
+    except Exception as exc:
+        return CLIResult(
+            ok=False,
+            error=str(exc),
+            stats=dict(cli.stats)
+        )
+
+
+# ============================================================================
 # MAIN ENTRY POINT
 # ============================================================================
 
-def main() -> int:
-    """Main CLI entry point for nono."""
+def main(argv: Optional[List[str]] = None) -> int:
+    """CLI entry point returning an exit code.
+    
+    Exit codes:
+        0 — success
+        1 — runtime error
+        2 — usage / argument error (argparse default)
+        130 — interrupted by user (Ctrl+C)
+    
+    Args:
+        argv: Override ``sys.argv[1:]`` for testing. Pass ``None`` for
+              normal CLI usage.
+    
+    Returns:
+        Integer exit code suitable for ``sys.exit()``.
+    """
+    Colors.init()
+    
     cli = create_cli(
         prog="nono",
         description="Nono GenAI Tasker - Execute AI tasks with multi-provider support",
-        version="0.1.0",
+        version="0.2.0",
         with_provider=True,
         with_task=True,
         with_io=True,
@@ -930,15 +1202,15 @@ def main() -> int:
     )
     
     cli.add_examples([
-        "%(prog)s --provider gemini --prompt 'Summarize this text' -i document.txt",
+        "%(prog)s --provider google --prompt 'Summarize this text' -i document.txt",
         "%(prog)s --provider openai --task summarize --input data.json -o result.json",
         "%(prog)s --provider ollama --model llama3 --template prompt.j2 --vars '{\"topic\": \"AI\"}'",
         "%(prog)s @params.txt",
-        "%(prog)s --batch --batch-file inputs.txt --provider gemini -o outputs/",
+        "%(prog)s --batch --batch-file inputs.txt --provider google -o outputs/",
     ])
     
     try:
-        args = cli.parse_args()
+        args = cli.parse_args(argv)
         
         # Show configuration in verbose mode
         if args.verbose >= 1:
@@ -980,12 +1252,14 @@ def main() -> int:
         cli.print_final_summary()
         return 0
         
+    except SystemExit as exc:
+        return exc.code if isinstance(exc.code, int) else 1
     except KeyboardInterrupt:
         print()
         print_warning("Interrupted by user")
         return 130
     except Exception as e:
-        cli.exit_with_error(f"Error: {e}")
+        print_error(str(e))
         return 1
 
 

@@ -782,6 +782,11 @@ Nono/
     │   ├── genai_executer.py
     │   └── config.json
     └── examples/               # Usage examples
+      └── Jenkinsfile         # Pipeline de ejemplo para Jenkins
+
+  ## CI/CD (Jenkins)
+
+  En [nono/examples/Jenkinsfile](nono/examples/Jenkinsfile) tienes un pipeline declarativo de ejemplo que crea un entorno virtual, instala el proyecto en modo editable y ejecuta la CLI en modo `--dry-run`. Para usar credenciales reales, sustituye el ID `nono-google-api-key` por el de tu Jenkins y elimina `--dry-run`.
 ```
 
 ## Documentation

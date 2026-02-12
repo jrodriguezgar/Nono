@@ -503,6 +503,24 @@ def create_sample_config(filepath: str) -> bool:
         'grok': {
             'default_model': 'grok-1'
         },
+        'groq': {
+            'default_model': 'llama-3.3-70b-versatile'
+        },
+        'cerebras': {
+            'default_model': 'llama-3.3-70b'
+        },
+        'nvidia': {
+            'default_model': 'meta/llama-3.3-70b-instruct'
+        },
+        'openrouter': {
+            'default_model': 'openrouter/auto'
+        },
+        'foundry': {
+            'default_model': 'openai/gpt-4o'
+        },
+        'vercel': {
+            'default_model': 'anthropic/claude-opus-4.5'
+        },
         'ollama': {
             'host': 'http://localhost:11434',
             'default_model': 'llama3'
