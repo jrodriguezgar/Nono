@@ -94,8 +94,9 @@ STANDARD_CONFIG_NAMES = [
 
 # Module-level paths
 _MODULE_DIR = Path(__file__).parent
-_DEFAULT_TEMPLATES_DIR = _MODULE_DIR / "tasker" / "templates"
-_DEFAULT_PROMPTS_DIR = _MODULE_DIR / "tasker" / "prompts"
+_NONO_DIR = _MODULE_DIR.parent
+_DEFAULT_TEMPLATES_DIR = _NONO_DIR / "tasker" / "templates"
+_DEFAULT_PROMPTS_DIR = _NONO_DIR / "tasker" / "prompts"
 _DEFAULT_CONFIG_FILE = _MODULE_DIR / "config.toml"
 
 
@@ -260,13 +261,17 @@ class Config:
                     return self
                 with open(path, 'rb') as fb:
                     data = tomllib.load(fb)
+            elif format == ConfigFormat.YAML:
+                try:
+                    import yaml
+                except ImportError:
+                    logger.warning("PyYAML not installed. Run: pip install pyyaml")
+                    return self
+                with open(path, 'r', encoding='utf-8') as f:
+                    data = yaml.safe_load(f)
             else:
                 with open(path, 'r', encoding='utf-8') as f:
-                    if format == ConfigFormat.YAML:
-                        import yaml
-                        data = yaml.safe_load(f)
-                    else:
-                        data = json.load(f)
+                    data = json.load(f)
             
             self._flatten_and_store(data, self._file_values, ConfigSource.FILE)
             logger.debug(f"Loaded config from: {path}")
@@ -275,18 +280,25 @@ class Config:
         
         return self
     
+    _MAX_FLATTEN_DEPTH: int = 10
+    """Safety limit for nested config dictionaries."""
+
     def _flatten_and_store(
         self,
         data: Dict[str, Any],
         storage: Dict[str, ConfigValue],
         source: ConfigSource,
-        prefix: str = ""
+        prefix: str = "",
+        _depth: int = 0,
     ) -> None:
         """Flatten nested dictionary and store as ConfigValues."""
+        if _depth >= self._MAX_FLATTEN_DEPTH:
+            logger.warning("Config nesting exceeds %d levels at '%s' — skipped.", self._MAX_FLATTEN_DEPTH, prefix)
+            return
         for key, value in data.items():
             full_key = f"{prefix}.{key}" if prefix else key
             if isinstance(value, dict):
-                self._flatten_and_store(value, storage, source, full_key)
+                self._flatten_and_store(value, storage, source, full_key, _depth + 1)
             else:
                 storage[full_key] = ConfigValue(value=value, source=source, key=full_key)
     
@@ -499,8 +511,8 @@ def create_sample_config(filepath: str) -> bool:
         'deepseek': {
             'default_model': 'deepseek-chat'
         },
-        'grok': {
-            'default_model': 'grok-1'
+        'xai': {
+            'default_model': 'grok-3'
         },
         'groq': {
             'default_model': 'llama-3.3-70b-versatile'
@@ -510,6 +522,9 @@ def create_sample_config(filepath: str) -> bool:
         },
         'nvidia': {
             'default_model': 'meta/llama-3.3-70b-instruct'
+        },
+        'github': {
+            'default_model': 'openai/gpt-5'
         },
         'openrouter': {
             'default_model': 'openrouter/auto'
@@ -526,6 +541,19 @@ def create_sample_config(filepath: str) -> bool:
         },
         'rate_limits': {
             'delay_between_requests': 0.5
+        },
+        'agent': {
+            'default_provider': 'google',
+            'default_model': '',
+            'temperature': 0.7,
+            'max_tokens': 4096,
+            'router_max_iterations': 3,
+            'router_temperature': 0.0,
+        },
+        'workflow': {
+            'log_steps': True,
+            'default_input_key': 'input',
+            'default_output_key': 'output',
         },
         'paths': {
             'templates_dir': '',

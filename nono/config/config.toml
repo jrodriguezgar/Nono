@@ -1,0 +1,252 @@
+# Nono GenAI Framework Configuration
+
+[google]
+default_model = "gemini-3-flash-preview"
+
+[openai]
+default_model = "gpt-4o-mini"
+
+[perplexity]
+default_model = "sonar"
+
+[deepseek]
+default_model = "deepseek-chat"
+
+[xai]
+default_model = "grok-3"
+
+[groq]
+default_model = "llama-3.3-70b-versatile"
+
+[cerebras]
+default_model = "llama-3.3-70b"
+
+[nvidia]
+default_model = "meta/llama-3.3-70b-instruct"
+
+[github]
+default_model = "openai/gpt-5"
+
+[openrouter]
+default_model = "openrouter/auto"
+
+[foundry]
+default_model = "openai/gpt-4o"
+
+[huggingface]
+default_model = "meta-llama/Llama-3.3-70B-Instruct"
+
+[vercel]
+default_model = "anthropic/claude-opus-4.5"
+
+[ollama]
+host = "http://localhost:11434"  # Default Ollama host
+default_model = "llama3"
+
+[rate_limits]
+delay_between_requests = 0.5
+
+[agent]
+# Default provider for LlmAgent and RouterAgent routing calls
+default_provider = "google"
+# Default model (empty = use provider's default from [provider].default_model)
+default_model = ""
+# Default temperature for agent LLM calls
+temperature = 0.7
+# Maximum tokens for agent responses
+max_tokens = 4096
+# RouterAgent: default max iterations for loop mode
+router_max_iterations = 3
+# RouterAgent: temperature for routing decisions (lower = more deterministic)
+router_temperature = 0.0
+# Maximum tool-call loop iterations to prevent infinite loops
+max_tool_iterations = 10
+# Maximum messages in tool-calling loop to avoid context overflow
+max_loop_messages = 40
+# Maximum depth for recursive agent transfers (prevents stack overflow)
+max_transfer_depth = 10
+
+[fallback]
+# Automatic provider/model fallback when the primary provider fails.
+enabled = true
+# Maximum retry attempts per provider before falling back to the next one.
+max_retries = 1
+# Timeout in seconds for each provider attempt (0 = no timeout override).
+timeout = 30
+
+# Fallback chain — tried in order when the active provider fails.
+# Each entry needs a provider name and an optional model override
+# (empty model = use [provider].default_model from above).
+
+[[fallback.chain]]
+provider = "google"
+model = "gemini-3-flash-preview"
+
+[[fallback.chain]]
+provider = "groq"
+model = "llama-3.3-70b-versatile"
+
+[[fallback.chain]]
+provider = "openai"
+model = "gpt-4o-mini"
+
+[[fallback.chain]]
+provider = "deepseek"
+model = "deepseek-chat"
+
+[[fallback.chain]]
+provider = "openrouter"
+model = "openrouter/auto"
+
+[sandbox]
+# Default sandbox provider: "e2b", "modal", "daytona", "blaxel",
+# "cloudflare", "runloop", "vercel"
+default_provider = "e2b"
+# Default execution timeout in seconds
+timeout = 300
+# Working directory inside the sandbox
+working_dir = "/home/user"
+# Keep sandbox alive after execution for inspection
+keep_alive = false
+# Enable state snapshots for durability / rehydration
+snapshot = false
+
+[executer]
+# Code execution mode: "subprocess" (isolated) or "exec" (in-process)
+mode = "subprocess"
+# Security mode: "safe" (blocks dangerous ops) or "permissive" (allows all)
+security = "safe"
+# Timeout in seconds for code execution
+timeout = 30
+# Maximum retry attempts for failed executions
+max_retries = 2
+# Save execution results to disk
+save_executions = true
+
+[cli]
+# Enable ANSI color output
+colors_enabled = true
+# Default output format: "summary", "json", "text", "table"
+default_output_format = "summary"
+# Default log level: "debug", "info", "warning", "error"
+default_log_level = "info"
+# Default AI provider for CLI commands
+default_provider = "google"
+# Allow reading arguments from @file
+allow_parameter_files = true
+# Ask confirmation before executing
+require_confirmation = false
+# Run in dry-run mode by default
+dry_run_by_default = false
+# Default timeout in seconds
+default_timeout = 60
+# Default maximum tokens for responses
+default_max_tokens = 4096
+
+[workflow]
+# Enable logging of step transitions
+log_steps = true
+# Default input_key for tasker_node / agent_node
+default_input_key = "input"
+# Default output_key for tasker_node / agent_node
+default_output_key = "output"
+
+[paths]
+# Directory containing Jinja2 templates (.j2 files)
+# If relative, resolved from project root. Leave empty for default (nono/tasker/templates)
+templates_dir = ""
+
+# Directory containing task definition files (.json)
+# If relative, resolved from project root. Leave empty for default (nono/tasker/prompts)
+prompts_dir = ""
+
+# =============================================================================
+# MCP Servers — Model Context Protocol
+# =============================================================================
+# Register external MCP servers to use their tools inside Nono agents.
+# Install: pip install nono[mcp]
+# Manage via CLI: nono mcp list | nono mcp add | nono mcp remove
+#
+# [[mcp.servers]]
+# name = "filesystem"
+# transport = "stdio"            # "stdio", "http", or "sse"
+# command = "uvx"                # executable (stdio only)
+# args = ["mcp-server-filesystem", "/home/user/docs"]
+# env = {}                       # environment variables (stdio only)
+# timeout = 30.0                 # connection timeout in seconds
+# enabled = true                 # set to false to disable without removing
+#
+# [[mcp.servers]]
+# name = "my-api"
+# transport = "http"
+# url = "http://localhost:8000/mcp"
+# headers = { Authorization = "Bearer <token>" }
+
+[mcp]
+# No servers configured by default.
+# Use 'nono mcp add <name> --command <cmd> --args <arg1> <arg2>' to add one.
+
+# =============================================================================
+# Model Catalog
+# =============================================================================
+# Each key is "provider/model". Values: prompt_size (tokens), rpm, rpd, tpm, tpd.
+# Omitted fields mean "no limit" or "unknown".
+
+[models]
+"cerebras/gpt-oss-120b" = { prompt_size = 65536, rpm = 30, rpd = 14400, tpm = 64000, tpd = 1000000 }
+"cerebras/llama-3.3-70b" = { prompt_size = 65536, rpm = 30, rpd = 14400, tpm = 64000, tpd = 1000000 }
+"cerebras/llama3.1-8b" = { prompt_size = 8192, rpm = 30, rpd = 14400, tpm = 60000, tpd = 1000000 }
+"cerebras/qwen-3-32b" = { prompt_size = 65536, rpm = 30, rpd = 14400, tpm = 64000, tpd = 1000000 }
+"cerebras/zai-glm-4.7" = { prompt_size = 64000, rpm = 10, rpd = 100, tpm = 60000, tpd = 500000 }
+"foundry/deepseek/DeepSeek-V3-0324" = { prompt_size = 128000, rpm = 15, rpd = 150, tpm = 120000 }
+"foundry/deepseek/deepseek-r1" = { prompt_size = 128000, rpm = 15, rpd = 150, tpm = 120000 }
+"foundry/meta-llama/llama-3.3-70b-instruct" = { prompt_size = 128000, rpm = 15, rpd = 150, tpm = 120000 }
+"foundry/microsoft/Phi-4" = { prompt_size = 16384, rpm = 15, rpd = 150, tpm = 120000 }
+"foundry/mistralai/mistral-large-2411" = { prompt_size = 128000, rpm = 15, rpd = 150, tpm = 120000 }
+"foundry/openai/gpt-4o" = { prompt_size = 128000, rpm = 15, rpd = 150, tpm = 120000 }
+"foundry/openai/gpt-5" = { prompt_size = 128000, rpm = 15, rpd = 150, tpm = 120000 }
+"foundry/xai/grok-3" = { prompt_size = 131072, rpm = 15, rpd = 150, tpm = 120000 }
+"github/deepseek/DeepSeek-V3-0324" = { prompt_size = 128000, rpm = 15, rpd = 150, tpm = 120000 }
+"github/deepseek/deepseek-r1" = { prompt_size = 128000, rpm = 15, rpd = 150, tpm = 120000 }
+"github/meta-llama/llama-3.3-70b-instruct" = { prompt_size = 128000, rpm = 15, rpd = 150, tpm = 120000 }
+"github/microsoft/Phi-4" = { prompt_size = 16384, rpm = 15, rpd = 150, tpm = 120000 }
+"github/mistralai/mistral-large-2411" = { prompt_size = 128000, rpm = 15, rpd = 150, tpm = 120000 }
+"github/openai/gpt-4o" = { prompt_size = 128000, rpm = 15, rpd = 150, tpm = 120000 }
+"github/openai/gpt-5" = { prompt_size = 128000, rpm = 15, rpd = 150, tpm = 120000 }
+"github/xai/grok-3" = { prompt_size = 131072, rpm = 15, rpd = 150, tpm = 120000 }
+"google/gemini-3-flash-preview" = { prompt_size = 1048576, rpm = 5, rpd = 20, tpm = 250000 }
+"groq/allam-2-7b" = { rpm = 30, rpd = 7000, tpm = 6000, tpd = 500000 }
+"groq/canopylabs/orpheus-arabic-saudi" = { rpm = 10, rpd = 100, tpm = 1200, tpd = 3600 }
+"groq/canopylabs/orpheus-v1-english" = { rpm = 10, rpd = 100, tpm = 1200, tpd = 3600 }
+"groq/groq/compound" = { rpm = 30, rpd = 250, tpm = 70000 }
+"groq/groq/compound-mini" = { rpm = 30, rpd = 250, tpm = 70000 }
+"groq/llama-3.1-8b-instant" = { rpm = 30, rpd = 14400, tpm = 6000, tpd = 500000 }
+"groq/llama-3.3-70b-versatile" = { rpm = 30, rpd = 1000, tpm = 12000, tpd = 100000 }
+"groq/meta-llama/llama-4-maverick-17b-128e-instruct" = { rpm = 30, rpd = 1000, tpm = 6000, tpd = 500000 }
+"groq/meta-llama/llama-4-scout-17b-16e-instruct" = { rpm = 30, rpd = 1000, tpm = 30000, tpd = 500000 }
+"groq/meta-llama/llama-guard-4-12b" = { rpm = 30, rpd = 14400, tpm = 15000, tpd = 500000 }
+"groq/meta-llama/llama-prompt-guard-2-22m" = { rpm = 30, rpd = 14400, tpm = 15000, tpd = 500000 }
+"groq/meta-llama/llama-prompt-guard-2-86m" = { rpm = 30, rpd = 14400, tpm = 15000, tpd = 500000 }
+"groq/moonshotai/kimi-k2-instruct" = { rpm = 60, rpd = 1000, tpm = 10000, tpd = 300000 }
+"groq/moonshotai/kimi-k2-instruct-0905" = { rpm = 60, rpd = 1000, tpm = 10000, tpd = 300000 }
+"groq/openai/gpt-oss-120b" = { rpm = 30, rpd = 1000, tpm = 8000, tpd = 200000 }
+"groq/openai/gpt-oss-20b" = { rpm = 30, rpd = 1000, tpm = 8000, tpd = 200000 }
+"groq/openai/gpt-oss-safeguard-20b" = { rpm = 30, rpd = 1000, tpm = 8000, tpd = 200000 }
+"groq/qwen/qwen3-32b" = { rpm = 60, rpd = 1000, tpm = 6000, tpd = 500000 }
+"nvidia/deepseek-ai/deepseek-r1" = { prompt_size = 128000, rpm = 60, tpm = 100000 }
+"nvidia/deepseek-ai/deepseek-v3.1-terminus" = { prompt_size = 128000, rpm = 60, tpm = 100000 }
+"nvidia/meta/llama-3.3-70b-instruct" = { prompt_size = 128000, rpm = 60, tpm = 100000 }
+"nvidia/moonshotai/kimi-k2-instruct-0905" = { prompt_size = 131072, rpm = 60, tpm = 100000 }
+"nvidia/nvidia/llama-3.1-nemotron-70b-instruct" = { prompt_size = 128000, rpm = 60, tpm = 100000 }
+"nvidia/qwen/qwq-32b" = { prompt_size = 32768, rpm = 60, tpm = 100000 }
+"openrouter/anthropic/claude-opus-4.5" = { prompt_size = 200000, rpd = 50 }
+"openrouter/deepseek/deepseek-v3.2" = { prompt_size = 163840, rpd = 50 }
+"openrouter/google/gemini-3-flash-preview" = { prompt_size = 1048576, rpd = 50 }
+"openrouter/moonshotai/kimi-k2-thinking" = { prompt_size = 262144, rpd = 50 }
+"openrouter/openai/gpt-5.2-chat" = { prompt_size = 128000, rpd = 50 }
+"openrouter/openrouter/auto" = { prompt_size = 2000000, rpd = 50 }
+"openrouter/qwen/qwen3-235b-a22b-2507" = { prompt_size = 262144, rpd = 50 }
+"openrouter/tngtech/deepseek-r1t2-chimera:free" = { prompt_size = 163840, rpd = 50 }
+"vercel/anthropic/claude-opus-4.5" = { prompt_size = 200000, rpm = 60, tpm = 100000 }
+"vercel/google/gemini-3-flash" = { prompt_size = 1048576, rpm = 60, tpm = 1000000 }
+"vercel/openai/gpt-5.2" = { prompt_size = 128000, rpm = 60, tpm = 100000 }

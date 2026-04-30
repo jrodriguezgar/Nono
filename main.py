@@ -78,6 +78,11 @@ def _load_model_catalog() -> Dict[str, List[str]]:
     return catalog
 
 
+# Pre-computed provider values from enum (avoids re-sorting on every call)
+_PROVIDER_VALUES: frozenset[str] = frozenset(p.value for p in AIProvider)
+_PROVIDER_VALUES_SORTED: List[str] = sorted(_PROVIDER_VALUES)
+
+
 def get_available_providers() -> List[str]:
     """Get available providers from catalog or enum fallback.
 
@@ -85,14 +90,13 @@ def get_available_providers() -> List[str]:
         Sorted list of provider names.
     """
     catalog = _load_model_catalog()
-    provider_values = sorted({provider.value for provider in AIProvider})
 
     if catalog:
-        catalog_providers = sorted([name for name in catalog.keys() if name in provider_values])
+        catalog_providers = sorted(name for name in catalog if name in _PROVIDER_VALUES)
         if catalog_providers:
             return catalog_providers
 
-    return provider_values
+    return _PROVIDER_VALUES_SORTED
 
 
 def get_models_for_provider(provider: str) -> List[str]:

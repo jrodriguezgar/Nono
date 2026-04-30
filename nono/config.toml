@@ -48,3 +48,24 @@ templates_dir = ""
 # Directory containing task definition files (.json)
 # If relative, resolved from project root. Leave empty for default (nono/tasker/prompts)
 prompts_dir = ""
+
+[agent.factory]
+# Dynamic agent creation from natural language descriptions.
+# SECURITY: Disabled by default. Enable only when needed.
+allow_dynamic_creation = false
+
+# Maximum number of tools a generated agent can use
+max_tools_per_agent = 10
+
+# Maximum system prompt length (characters) for generated agents
+max_instruction_length = 4000
+
+# Default provider/model for the factory's own LLM calls
+default_provider = "google"
+# default_model = ""  # uses provider default when empty
+
+# Restrict which providers generated agents may use (empty = all allowed)
+# allowed_providers = ["google", "openai"]
+
+# Restrict which tools generated agents may use (empty = all available)
+# tool_allowlist = ["get_weather", "search_db"]

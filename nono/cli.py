@@ -104,6 +104,7 @@ class AIProvider(Enum):
     CEREBRAS = "cerebras"
     NVIDIA = "nvidia"
     OPENROUTER = "openrouter"
+    HUGGINGFACE = "huggingface"
     FOUNDRY = "foundry"
     VERCEL = "vercel"
     OLLAMA = "ollama"
@@ -133,19 +134,27 @@ class Colors:
     HIGHLIGHT = MAGENTA
     
     _enabled: bool = True
+    _original_values: dict[str, str] = {}
     
     @classmethod
     def disable(cls) -> None:
         """Disable colors for non-TTY or unsupported terminals."""
         cls._enabled = False
-        for attr in dir(cls):
-            if not attr.startswith('_') and isinstance(getattr(cls, attr), str):
-                setattr(cls, attr, '')
+        if not cls._original_values:
+            cls._original_values = {
+                attr: getattr(cls, attr)
+                for attr in dir(cls)
+                if not attr.startswith('_') and isinstance(getattr(cls, attr), str)
+            }
+        for attr in cls._original_values:
+            setattr(cls, attr, '')
     
     @classmethod
     def enable(cls) -> None:
-        """Re-enable colors (reinitialize)."""
+        """Re-enable colors (restore original values)."""
         cls._enabled = True
+        for attr, value in cls._original_values.items():
+            setattr(cls, attr, value)
         cls.init()
     
     @classmethod
