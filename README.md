@@ -1,242 +1,117 @@
-# Nono - No Overhead, Neural Operations
+# Nono — No Overhead, Neural Operations
 
-> Unified AI-powered framework for executing tasks, operations, and applications using Generative AI as the engine.
+> Unified AI framework for tasks, agents, workflows, and code execution across 15 LLM providers.
 
 ![Python](https://img.shields.io/badge/python-3.10+-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Version](https://img.shields.io/badge/version-1.0.0-orange)
-
-## Table of Contents
-
-- [Overview](#overview)
-- [Features](#features)
-- [Supported Providers](#supported-providers)
-- [Installation](#installation)
-- [Modules](#modules)
-- [Quick Start](#quick-start)
-- [Configuration](#configuration)
-- [Project Structure](#project-structure)
-- [Documentation](#documentation)
-- [Contributing](#contributing)
-- [Contact](#contact)
-- [Dependencies](#dependencies)
-- [License](#license)
-
-## Overview
-
-**Nono** is a modular Python framework that leverages Large Language Models (LLMs) to perform a variety of tasks—from simple text generation to complex data transformations and code execution. It provides a unified interface across multiple AI providers, allowing you to switch between them seamlessly.
-
-## Features
-
-| Feature                               | Description                                                     |
-| ------------------------------------- | --------------------------------------------------------------- |
-| **Multi-Provider Support**      | Google Gemini, OpenAI, Perplexity, DeepSeek, Grok (xAI), Ollama |
-| **Task-Based Execution**        | Define reusable prompts and schemas in JSON files               |
-| **Code Generation & Execution** | Generate and run Python code from natural language              |
-| **Batch Data Operations**       | Token-efficient processing with TSV format (70% savings)        |
-| **Intelligent Throttling**      | Automatic batching based on model context windows               |
-| **Structured Outputs**          | JSON schema validation for consistent responses                 |
-| **Rate Limiting**               | Built-in Token Bucket for API request control                   |
-| **SSL Flexibility**             | Configurable SSL verification for corporate environments        |
-
-## Supported Providers
-
-| Provider                | Models                                                   | Context Window   |
-| ----------------------- | -------------------------------------------------------- | ---------------- |
-| **Google Gemini** | gemini-3-flash-preview, gemini-2.0-flash, gemini-1.5-pro | Up to 4M chars   |
-| **OpenAI**        | gpt-4o, gpt-4o-mini, gpt-4-turbo                         | Up to 500K chars |
-| **Perplexity**    | sonar, llama-3 variants                                  | Up to 120K chars |
-| **DeepSeek**      | deepseek-chat, deepseek-coder                            | Up to 120K chars |
-| **Grok (xAI)**    | grok-1                                                   | Up to 100K chars |
-| **Ollama**        | Any local model                                          | Varies           |
-
-## Installation
-
-### Prerequisites
-
-- Python >= 3.10
-- pip (package manager)
-
-### Steps
-
-1. Clone the repository:
-
-   ```bash
-   git clone https://github.com/DatamanEdge/Nono.git
-   cd Nono
-   ```
-2. Create a virtual environment:
-
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate  # Linux/Mac
-   .venv\Scripts\activate     # Windows
-   ```
-3. Install dependencies:
-
-   ```bash
-   pip install google-genai openai httpx jsonschema certifi keyring
-   ```
-4. Configure your API key (choose one method):
-
-   **Option A: OS Keyring (Recommended - Most Secure)**
-
-   ```python
-   import keyring
-   keyring.set_password("gemini", "api_key", "your-api-key")
-   ```
-
-   **Option B: Key File**
-
-   ```bash
-   echo "your-api-key" > nono/apikey.txt
-   ```
-
-## Modules
-
-Nono consists of three main modules:
-
-### 🔧 Connector
-
-Low-level unified interface for AI providers with rate limiting and SSL management.
-
-```python
-from nono.connector import GeminiService
-
-client = GeminiService(model_name="gemini-3-flash-preview")
-response = client.generate_completion(
-    messages=[{"role": "user", "content": "Hello!"}]
-)
-```
-
-📖 [Connector Documentation](nono/connector/README_connector_genai.md)
+![Version](https://img.shields.io/badge/version-1.1.0-orange)
 
 ---
 
-### 📋 Tasker
+## What is Nono?
 
-Task-based execution framework with JSON prompt definitions and structured outputs.
-
-```python
-from nono.tasker import TaskExecutor
-
-executor = TaskExecutor()
-result = executor.execute_task(
-    task_name="name_classifier",
-    input_data={"name": "María García"}
-)
-```
-
-📖 [Tasker Documentation](nono/tasker/README.md)
-
----
-
-### ⚡ Executer
-
-Generate and execute Python code from natural language with security controls.
+**Nono** is a modular Python framework that replaces complex multi-library setups with a single, batteries-included package for Generative AI. From a one-line prompt to a multi-agent pipeline with 100 orchestration patterns and 29 ready-to-use pipelines — everything works with one import and minimal dependencies.
 
 ```python
-from nono.executer import CodeExecuter
+from nono.agent import Agent, Runner
 
-executer = CodeExecuter()
-result = executer.run("Calculate the factorial of 10")
-print(result.output)  # 3628800
-```
-
-📖 [Executer Documentation](nono/executer/README.md)
-
----
-
-### �️ CLI
-
-Command-line interface for executing AI tasks with multi-provider support, colored output, and progress indicators.
-
-```bash
-# Execute with prompt
-python -m nono.cli --provider gemini --prompt "Explain quantum computing"
-
-# Dry-run mode
-python -m nono.cli --dry-run --provider openai --task summarize -i doc.txt
-
-# Load parameters from file
-python -m nono.cli @params.txt
-```
-
-📖 [CLI Documentation](nono/README_cli.md)
-
----
-
-### ⚙️ Config
-
-Unified configuration management with multi-source priority resolution.
-
-```python
-from nono.config import Config, load_config
-
-# Quick setup with method chaining
-config = load_config(filepath='config.toml', env_prefix='NONO_')
-
-# Access values
-model = config['google.default_model']
-delay = config.get('rate_limits.delay_between_requests', type=float)
-
-# Schema validation
-from nono.config import ConfigSchema
-schema = ConfigSchema()
-schema.add_field('google.default_model', required=True)
-config.validate()
-```
-
-📖 [Configuration Documentation](nono/README_config.md)
-
----
-
-### �📊 Data Operations (Templates)
-
-Token-efficient batch operations using Jinja2 templates.
-
-**Available Templates:**
-
-| Template                    | Description                            |
-| --------------------------- | -------------------------------------- |
-| `semantic_lookup.j2`      | Fuzzy matching against reference lists |
-| `spell_correction.j2`     | Correct misspellings in text           |
-| `data_loss_prevention.j2` | Anonymize PII (GDPR, HIPAA, CCPA)      |
-| `planner.j2`              | Generate structured project plans      |
-| `decompose_tasks.j2`      | Break tasks into subtasks              |
-| `logical_ordering.j2`     | Order items by dependencies            |
-| `conditional_flow.j2`     | Route decisions based on conditions    |
-
-```python
-from nono.tasker import build_from_file_blocks
-
-# Build prompt from template with system/user blocks
-prompts = build_from_file_blocks(
-    "data_loss_prevention.j2",
-    text="John Smith, email: john@email.com, SSN: 123-45-6789",
-    compliance="GDPR"
-)
-
-# Execute with AI
-executor = TaskExecutor()
-response = executor.execute(prompts["user"], system_prompt=prompts["system"])
-```
-
-📖 See [templates/](nono/tasker/templates/) for available templates
-
-## Quick Start
-
-### Basic Text Generation
-
-```python
-from nono.tasker import TaskExecutor
-
-executor = TaskExecutor()
-response = executor.execute("Explain quantum computing in simple terms.")
+agent = Agent(name="assistant", model="gemini-3-flash-preview")
+response = Runner.run(agent, "Explain quantum computing in simple terms.")
 print(response)
 ```
 
-### Task-Based Execution
+---
+
+## Key Features
+
+| Feature | Summary |
+|---------|---------|
+| **16 native providers** | Gemini, OpenAI, Anthropic Claude, DeepSeek, Groq, Cerebras, NVIDIA, Hugging Face, Azure AI, Ollama… — switch with one config change |
+| **100 orchestration patterns + 29 pipelines** | Tree of Thoughts, Monte Carlo, Genetic Algorithm, Circuit Breaker, Saga, and 29 domain pipelines (bug fix, security audit, RAG, ETL, prompt engineering…) |
+| **Agent framework (NAA)** | `LlmAgent` with tools, skills, hooks, content scopes, and transfer-to-agent delegation |
+| **DAG workflow engine** | Checkpointing, time-travel debugging, parallel execution, loops, YAML/JSON definitions |
+| **Task-based execution** | JSON prompt definitions + Jinja2 templates — prompts-as-data, not code strings |
+| **Code execution** | Sandboxed local executor + 7 cloud sandbox providers (E2B, Modal, Daytona, …) |
+| **5 built-in tool collections** | DateTime, Text, Web, Python, ShortFx (3,000+ formulas) — ready to use |
+| **MCP client** | Connect to any Model Context Protocol server |
+| **20 agent skills** | Triple-mode: standalone, as tool, or as pipeline component |
+| **6 hook types × 15 events** | Functions, commands, prompts, tasks, skills, and tools as lifecycle hooks |
+| **Dynamic Agent Factory** | Describe what you need in plain English → production agent with security controls |
+| **Decision Wizard** | Recommends the optimal orchestration pattern for your task |
+| **Built-in observability** | Hierarchical `TraceCollector` — zero external dependencies |
+| **Enterprise-ready** | SSL modes, rate limiting, provider fallback chains, HITL protocols |
+
+Full feature breakdown and framework comparisons → [FEATURES.md](FEATURES.md)
+
+---
+
+## Supported Providers
+
+| Provider | Recommended Model | Context Window |
+|----------|-------------------|----------------|
+| **Google Gemini** | `gemini-3-flash-preview` (default) | Up to 4M chars |
+| **OpenAI** | `gpt-4o-mini` | Up to 500K chars |
+| **Anthropic Claude** | `claude-sonnet-4` | Up to 200K chars |
+| **Perplexity** | `sonar` | Up to 120K chars |
+| **DeepSeek** | `deepseek-chat` | Up to 120K chars |
+| **xAI** | `grok-3` | Up to 100K chars |
+| **Groq** | `llama-3.3-70b-versatile` | Varies |
+| **Cerebras** | `llama-3.3-70b` | Varies |
+| **NVIDIA** | `meta/llama-3.3-70b-instruct` | Varies |
+| **Hugging Face** | `meta-llama/Llama-3.3-70B-Instruct` | Varies |
+| **GitHub Models** | `openai/gpt-5` | Varies |
+| **OpenRouter** | `openrouter/auto` | Varies |
+| **Azure AI** | `openai/gpt-4o` | Varies |
+| **Vercel** | `anthropic/claude-opus-4.5` | Varies |
+| **Ollama** | Any local model | Varies |
+
+---
+
+## Installation
+
+```bash
+# 1. Clone
+git clone https://github.com/DatamanEdge/Nono.git
+cd Nono
+
+# 2. Virtual environment
+python -m venv .venv
+source .venv/bin/activate   # Linux/Mac
+.venv\Scripts\activate      # Windows
+
+# 3. Install
+pip install -e .
+```
+
+Configure your API key:
+
+```python
+import keyring
+keyring.set_password("gemini", "api_key", "your-api-key")  # recommended
+```
+
+Or use a key file: `echo "your-api-key" > nono/apikey.txt`
+
+Full API key and SSL setup → [API Manager](nono/connector/README_api_manager.md) | [SSL Guide](nono/connector/README_connector_genai_ssl.md)
+
+---
+
+## Quick Start
+
+### Agent (stateful, multi-turn)
+
+```python
+from nono.agent import Agent, Runner
+
+agent = Agent(
+    name="researcher",
+    model="gemini-3-flash-preview",
+    instruction="You are a helpful research assistant.",
+)
+response = Runner.run(agent, "What are the latest trends in AI agents?")
+```
+
+### Tasker (stateless, single-turn)
 
 ```python
 from nono.tasker import TaskExecutor
@@ -246,560 +121,156 @@ result = executor.execute_task(
     task_name="product_categorizer",
     input_data={"product": "iPhone 15 Pro Max 256GB"}
 )
-print(result)  # {"category": "Electronics", "subcategory": "Smartphones"}
 ```
 
-### Code Generation
+### Code Execution
 
 ```python
 from nono.executer import CodeExecuter
 
 executer = CodeExecuter()
-result = executer.run(
-    instruction="List all Python files in the current directory"
-)
-print(result.output)
+result = executer.run("Calculate the factorial of 10")
+print(result.output)  # 3628800
 ```
 
-### Batch Data Processing (with Templates)
+### CLI
 
-```python
-from nono.tasker import TaskExecutor, build_from_file
-
-# Build spell correction prompt
-prompts = build_from_file(
-    template_name="spell_correction",
-    data=["Teh quick brwon fox"],
-    language="English"
-)
-
-# Execute
-executor = TaskExecutor()
-response = executor.execute(prompts[0])
-# Response contains corrected text in TSV format
-```
-
-## Input/Output Examples
-
-Esta sección muestra ejemplos concretos de datos de entrada y las respuestas JSON esperadas para cada template.
-
-### Data Loss Prevention (DLP)
-
-Anonimización de datos personales para cumplimiento normativo.
-
-**Entrada:**
-```python
-text = """
-Customer: John Smith
-Email: john.smith@company.com
-Phone: +1 (555) 123-4567
-SSN: 123-45-6789
-Credit Card: 4532-1234-5678-9012
-"""
-compliance = "GDPR"
-```
-
-**Salida JSON:**
-```json
-{
-  "anonymized_text": "Customer: [PERSON_1]\nEmail: [EMAIL_1]\nPhone: [PHONE_1]\nSSN: [SSN_1]\nCredit Card: [CREDIT_CARD_1]",
-  "entities_found": [
-    {"type": "PERSON", "original": "John Smith", "replacement": "[PERSON_1]"},
-    {"type": "EMAIL", "original": "john.smith@company.com", "replacement": "[EMAIL_1]"},
-    {"type": "PHONE", "original": "+1 (555) 123-4567", "replacement": "[PHONE_1]"},
-    {"type": "SSN", "original": "123-45-6789", "replacement": "[SSN_1]"},
-    {"type": "CREDIT_CARD", "original": "4532-1234-5678-9012", "replacement": "[CREDIT_CARD_1]"}
-  ],
-  "compliance_standard": "GDPR",
-  "risk_level": "high",
-  "recommendations": ["Store mapping table securely", "Implement data retention policy"]
-}
+```bash
+python -m nono.cli --provider gemini --prompt "Explain quantum computing"
+python -m nono.cli --provider openai --task summarize -i document.txt -o summary.json
+python -m nono.cli --dry-run --provider gemini --prompt "Test" -v
 ```
 
 ---
 
-### Conditional Flow (Decision Routing)
+## Architecture
 
-Enrutamiento de decisiones basado en condiciones.
-
-**Entrada:**
-```python
-input_text = "My order #12345 hasn't arrived after 2 weeks and I want a refund!"
-routes = ["billing", "technical_support", "shipping", "general_inquiry", "escalate_to_manager"]
-context = "E-commerce customer support system"
 ```
-
-**Salida JSON:**
-```json
-{
-  "selected_route": "shipping",
-  "confidence": 0.85,
-  "reasoning": "Customer mentions order delivery delay, which is a shipping-related issue",
-  "alternative_routes": [
-    {"route": "escalate_to_manager", "confidence": 0.6, "reason": "Refund request may require escalation"}
-  ],
-  "extracted_entities": {
-    "order_id": "12345",
-    "issue_type": "delayed_delivery",
-    "sentiment": "frustrated"
-  }
-}
+nono/
+├── agent/            # AI agent framework (NAA): LlmAgent, orchestration, runner
+│   ├── tools/        # Built-in tool collections (DateTime, Text, Web, Python, ShortFx)
+│   ├── skills/       # 20 reusable AI skills (class-based + SKILL.md)
+│   └── templates/    # Pre-configured agent templates & multi-agent compositions
+├── cli/              # Command-line interface module
+├── config/           # Configuration management
+├── connector/        # Low-level AI provider connectors + MCP client
+├── executer/         # Code generation & sandboxed execution
+├── sandbox/          # Remote sandbox execution (7 cloud providers)
+├── tasker/           # Task execution framework
+│   ├── prompts/      # JSON task definitions
+│   └── templates/    # Jinja2 prompt templates
+├── visualize/        # ASCII rendering (agent trees, workflows)
+└── workflows/        # DAG workflow engine with checkpointing
 ```
 
 ---
-
-### Planner (Project Planning)
-
-Generación de planes de proyecto estructurados.
-
-**Entrada:**
-```python
-goal = "Migrate legacy monolithic application to microservices architecture"
-constraints = ["6 month timeline", "Budget: $500K", "Team of 5 developers", "Zero downtime requirement"]
-```
-
-**Salida JSON:**
-```json
-{
-  "project_name": "Monolith to Microservices Migration",
-  "total_duration": "6 months",
-  "phases": [
-    {
-      "name": "Analysis & Planning",
-      "duration": "4 weeks",
-      "tasks": [
-        "Document current architecture",
-        "Identify service boundaries",
-        "Define API contracts"
-      ],
-      "deliverables": ["Architecture document", "Service decomposition diagram"],
-      "resources": ["2 senior developers", "1 architect"]
-    },
-    {
-      "name": "Infrastructure Setup",
-      "duration": "3 weeks",
-      "tasks": [
-        "Set up Kubernetes cluster",
-        "Configure CI/CD pipelines",
-        "Implement service mesh"
-      ],
-      "deliverables": ["Production-ready K8s environment", "Deployment automation"],
-      "resources": ["1 DevOps engineer", "1 developer"]
-    }
-  ],
-  "milestones": [
-    {"name": "Architecture approved", "date": "Week 4"},
-    {"name": "First service deployed", "date": "Week 10"},
-    {"name": "Full migration complete", "date": "Week 24"}
-  ],
-  "risks": [
-    {"risk": "Data consistency during migration", "mitigation": "Implement saga pattern"},
-    {"risk": "Performance degradation", "mitigation": "Load testing before each release"}
-  ]
-}
-```
-
----
-
-### Decompose Tasks (Task Breakdown)
-
-Descomposición de tareas complejas en subtareas.
-
-**Entrada:**
-```python
-task = "Implement user authentication system with OAuth2 and MFA"
-granularity = "detailed"
-```
-
-**Salida JSON:**
-```json
-{
-  "original_task": "Implement user authentication system with OAuth2 and MFA",
-  "subtasks": [
-    {
-      "id": 1,
-      "title": "Design authentication architecture",
-      "description": "Create technical design document for auth flow",
-      "estimated_hours": 8,
-      "priority": "high",
-      "dependencies": []
-    },
-    {
-      "id": 2,
-      "title": "Set up OAuth2 provider integration",
-      "description": "Integrate with Google, GitHub, Microsoft OAuth2",
-      "estimated_hours": 16,
-      "priority": "high",
-      "dependencies": [1]
-    },
-    {
-      "id": 3,
-      "title": "Implement JWT token management",
-      "description": "Create token generation, validation, and refresh logic",
-      "estimated_hours": 12,
-      "priority": "high",
-      "dependencies": [1]
-    },
-    {
-      "id": 4,
-      "title": "Add MFA support",
-      "description": "Implement TOTP-based two-factor authentication",
-      "estimated_hours": 16,
-      "priority": "medium",
-      "dependencies": [2, 3]
-    },
-    {
-      "id": 5,
-      "title": "Create user session management",
-      "description": "Handle login, logout, session timeout",
-      "estimated_hours": 8,
-      "priority": "medium",
-      "dependencies": [3]
-    }
-  ],
-  "total_estimated_hours": 60,
-  "critical_path": [1, 2, 4],
-  "parallel_opportunities": [[2, 3], [4, 5]]
-}
-```
-
----
-
-### Logical Ordering (Dependency Ordering)
-
-Ordenación de elementos según dependencias lógicas.
-
-**Entrada:**
-```python
-items = [
-    "Deploy to production",
-    "Write unit tests",
-    "Code review",
-    "Implement feature",
-    "Create PR",
-    "QA testing",
-    "Merge to main"
-]
-context = "Software development workflow"
-```
-
-**Salida JSON:**
-```json
-{
-  "ordered_items": [
-    {"position": 1, "item": "Implement feature", "reason": "Core work must be done first"},
-    {"position": 2, "item": "Write unit tests", "reason": "Tests validate the implementation"},
-    {"position": 3, "item": "Create PR", "reason": "Code ready for review"},
-    {"position": 4, "item": "Code review", "reason": "Peer review before merge"},
-    {"position": 5, "item": "Merge to main", "reason": "Approved code integrated"},
-    {"position": 6, "item": "QA testing", "reason": "Integration testing on main branch"},
-    {"position": 7, "item": "Deploy to production", "reason": "Final step after all validations"}
-  ],
-  "dependency_graph": {
-    "Implement feature": [],
-    "Write unit tests": ["Implement feature"],
-    "Create PR": ["Write unit tests"],
-    "Code review": ["Create PR"],
-    "Merge to main": ["Code review"],
-    "QA testing": ["Merge to main"],
-    "Deploy to production": ["QA testing"]
-  },
-  "parallel_groups": [
-    ["Write unit tests"]
-  ]
-}
-```
-
----
-
-### Semantic Lookup (Fuzzy Matching)
-
-Búsqueda semántica con coincidencia aproximada.
-
-**Entrada:**
-```python
-query = "iphone 15 pro"
-candidates = [
-    "Apple iPhone 15 Pro Max 256GB",
-    "Samsung Galaxy S24 Ultra",
-    "Apple iPhone 14 Pro",
-    "Google Pixel 8 Pro",
-    "Apple iPhone 15 128GB"
-]
-threshold = 0.7
-```
-
-**Salida JSON:**
-```json
-{
-  "query": "iphone 15 pro",
-  "matches": [
-    {"candidate": "Apple iPhone 15 Pro Max 256GB", "score": 0.95, "reason": "Exact model match with variant"},
-    {"candidate": "Apple iPhone 15 128GB", "score": 0.82, "reason": "Same generation, different variant"},
-    {"candidate": "Apple iPhone 14 Pro", "score": 0.75, "reason": "Same product line, previous generation"}
-  ],
-  "best_match": "Apple iPhone 15 Pro Max 256GB",
-  "no_match_candidates": [
-    {"candidate": "Samsung Galaxy S24 Ultra", "score": 0.25},
-    {"candidate": "Google Pixel 8 Pro", "score": 0.30}
-  ]
-}
-```
-
----
-
-### Spell Correction
-
-Corrección ortográfica con formato TSV.
-
-**Entrada:**
-```python
-data = ["Teh quick brwon fox", "Programing is awsome", "Recieve teh mesage"]
-language = "English"
-```
-
-**Salida TSV:**
-```
-Original	Corrected	Changes
-Teh quick brwon fox	The quick brown fox	Teh→The, brwon→brown
-Programing is awsome	Programming is awesome	Programing→Programming, awsome→awesome
-Recieve teh mesage	Receive the message	Recieve→Receive, teh→the, mesage→message
-```
-
----
-
-### Product Categorizer
-
-Categorización de productos.
-
-**Entrada:**
-```python
-product = "Sony WH-1000XM5 Wireless Noise Canceling Headphones"
-```
-
-**Salida JSON:**
-```json
-{
-  "product": "Sony WH-1000XM5 Wireless Noise Canceling Headphones",
-  "category": "Electronics",
-  "subcategory": "Audio",
-  "type": "Headphones",
-  "attributes": {
-    "brand": "Sony",
-    "model": "WH-1000XM5",
-    "connectivity": "Wireless",
-    "features": ["Noise Canceling", "Bluetooth"]
-  },
-  "confidence": 0.98
-}
-```
-
----
-
-### Name Classifier
-
-Clasificación de nombres propios.
-
-**Entrada:**
-```python
-names = ["María García", "Tokyo", "Microsoft", "Amazon River", "Albert Einstein"]
-```
-
-**Salida JSON:**
-```json
-{
-  "classifications": [
-    {"name": "María García", "type": "PERSON", "subtype": "individual", "confidence": 0.99},
-    {"name": "Tokyo", "type": "LOCATION", "subtype": "city", "confidence": 0.98},
-    {"name": "Microsoft", "type": "ORGANIZATION", "subtype": "company", "confidence": 0.99},
-    {"name": "Amazon River", "type": "LOCATION", "subtype": "geographical_feature", "confidence": 0.95},
-    {"name": "Albert Einstein", "type": "PERSON", "subtype": "historical_figure", "confidence": 0.99}
-  ],
-  "summary": {
-    "PERSON": 2,
-    "LOCATION": 2,
-    "ORGANIZATION": 1
-  }
-}
-```
 
 ## Configuration
 
-Nono provides a unified configuration system with multi-source priority resolution.
+Multi-source priority resolution (highest to lowest):
 
-📖 **Full documentation**: [Configuration Guide](nono/README_config.md)
-
-### Quick Start
+| Priority | Source | Example |
+|----------|--------|---------|
+| 1st | CLI arguments | `--provider gemini --model gpt-4o` |
+| 2nd | Environment variables | `NONO_GOOGLE__DEFAULT_MODEL` |
+| 3rd | Config file | `config.toml` |
+| 4th | Defaults | Programmatic defaults |
 
 ```python
-from nono.config import Config, load_config
+from nono.config import load_config
 
-# Quick setup
 config = load_config(filepath='config.toml', env_prefix='NONO_')
-
-# Access values with dot notation
 model = config['google.default_model']
-delay = config.get('rate_limits.delay_between_requests', type=float)
-
-# Method chaining
-config = (
-    Config(defaults={'timeout': 30})
-    .load_file('config.toml')
-    .load_env(prefix='NONO_')
-)
 ```
 
-### Resolution Priority
+Full configuration reference → [Configuration Guide](nono/README_config.md)
 
-| Priority | Source | Method |
-|----------|--------|--------|
-| 1st (Highest) | Arguments | `load_args()` / `set()` |
-| 2nd | Environment | `load_env(prefix='NONO_')` |
-| 3rd | File | `load_file('config.toml')` |
-| 4th (Lowest) | Defaults | `Config(defaults={...})` |
-
-### Environment Variables
-
-```bash
-# General config
-export NONO_GOOGLE__DEFAULT_MODEL="gemini-3-flash-preview"
-export NONO_RATE_LIMITS__DELAY_BETWEEN_REQUESTS="0.5"
-
-# Path config (legacy API)
-export NONO_TEMPLATES_DIR="/path/to/my/templates"
-export NONO_PROMPTS_DIR="/path/to/my/prompts"
-```
-
-> **Note**: Use double underscore (`__`) for nested keys.
-
-### Legacy API (Backwards Compatible)
-
-```python
-from nono.config import NonoConfig, set_templates_dir, get_prompts_dir
-
-# Set directories programmatically
-set_templates_dir("/path/to/my/templates")
-
-# Get values from TOML
-model = NonoConfig.get_config_value('google', 'default_model')
-```
-
-#### config.toml Configuration
-
-```toml
-[paths]
-# Relative paths are resolved from project root
-templates_dir = "my_templates"
-prompts_dir = "my_prompts"
-
-# Or use absolute paths
-# templates_dir = "/absolute/path/to/templates"
-# prompts_dir = "/absolute/path/to/prompts"
-```
-
-### API Keys
-
-API keys are resolved in this order:
-
-| Priority | Method     | Description                                  |
-| -------- | ---------- | -------------------------------------------- |
-| 1st      | Argument   | `TaskExecutor(api_key="...")`              |
-| 2nd      | OS Keyring | Secure credential store (auto-installed)     |
-| 3rd      | Key Files  | `{provider}_api_key.txt` or `apikey.txt` |
-
-**Recommended: Use OS Keyring**
-
-```python
-import keyring
-
-# Store keys (one-time setup)
-keyring.set_password("gemini", "api_key", "your-gemini-key")
-keyring.set_password("openai", "api_key", "your-openai-key")
-keyring.set_password("perplexity", "api_key", "your-perplexity-key")
-```
-
-> **Note**: If a key is found in a file, it's automatically migrated to keyring for future use.
-
-**Alternative: Key Files**
-
-```bash
-# Provider-specific file
-echo "your-key" > nono/gemini_api_key.txt
-
-# Or generic file (used if provider-specific not found)
-echo "your-key" > nono/apikey.txt
-```
-
-### SSL Configuration
-
-For corporate environments with custom certificates:
-
-```python
-from nono.connector import configure_ssl_verification, SSLVerificationMode
-
-# Use certifi (default)
-configure_ssl_verification(SSLVerificationMode.CERTIFI)
-
-# Custom certificate
-configure_ssl_verification(SSLVerificationMode.CUSTOM, custom_cert_path="path/to/cert.crt")
-
-# Insecure (development only)
-configure_ssl_verification(SSLVerificationMode.INSECURE)
-```
-
-## Project Structure
-
-```
-Nono/
-├── LICENSE
-├── README.md
-├── main.py                     # Entry point
-└── nono/
-    ├── __init__.py
-    ├── cli.py                  # Command-line interface
-    ├── config.py               # Unified configuration module
-    ├── config.toml             # Provider and paths configuration
-    ├── README_cli.md           # CLI documentation
-    ├── README_config.md        # Configuration documentation
-    ├── connector/              # Low-level AI connectors
-    │   ├── connector_genai.py
-    │   └── README_connector_genai.md
-    ├── tasker/                 # Task execution framework
-    │   ├── genai_tasker.py
-    │   ├── jinja_prompt_builder.py
-    │   ├── prompts/            # JSON task definitions
-    │   └── templates/          # Jinja2 templates
-    │       ├── conditional_flow.j2      # Decision routing
-    │       ├── data_loss_prevention.j2  # PII anonymization (DLP)
-    │       ├── decompose_tasks.j2       # Task breakdown
-    │       ├── logical_ordering.j2      # Dependency ordering
-    │       ├── name_classifier.j2       # Name classification
-    │       ├── planner.j2               # Project planning
-    │       ├── product_categorizer.j2   # Product categorization
-    │       ├── semantic_lookup.j2       # Fuzzy matching
-    │       └── spell_correction.j2      # Spell checking
-    ├── executer/               # Code generation & execution
-    │   ├── genai_executer.py
-    │   └── config.json
-    └── examples/               # Usage examples
-      └── Jenkinsfile         # Pipeline de ejemplo para Jenkins
-
-  ## CI/CD (Jenkins)
-
-  En [nono/examples/Jenkinsfile](nono/examples/Jenkinsfile) tienes un pipeline declarativo de ejemplo que crea un entorno virtual, instala el proyecto en modo editable y ejecuta la CLI en modo `--dry-run`. Para usar credenciales reales, sustituye el ID `nono-google-api-key` por el de tu Jenkins y elimina `--dry-run`.
-```
+---
 
 ## Documentation
 
-| Document                                                    | Description                     |
-| ----------------------------------------------------------- | ------------------------------- |
-| [CLI Guide](nono/README_cli.md)                                | Command-line interface usage    |
-| [Configuration Guide](nono/README_config.md)                   | Configuration module reference  |
-| [Connector Guide](nono/connector/README_connector_genai.md)    | Low-level AI provider interface |
-| [Tasker](nono/tasker/README.md)                                | Task-based execution framework  |
-| [Task Configuration](nono/tasker/README_task_configuration.md) | JSON prompt definition guide    |
-| [Technical Reference](nono/tasker/README_technical.md)         | Architecture and internals      |
-| [Executer](nono/executer/README.md)                            | Code generation and execution   |
+All detailed documentation is organized by module. Each document expands on a specific area of the framework.
+
+### Getting Started
+
+| Document | Description |
+|----------|-------------|
+| [Step-by-Step Guide](nono/README_guide.md) | Beginner tutorial — from first prompt to multi-agent pipelines |
+| [Progressive Disclosure](nono/README_progressive_disclosure.md) | Complexity levels (L0–L5) and how to grow incrementally |
+| [Tasker vs Agent](nono/README_tasker_vs_agent.md) | When to use stateless `TaskExecutor` vs stateful `Agent` |
+
+### Agent Framework
+
+| Document | Description |
+|----------|-------------|
+| [Agent](nono/agent/README_agent.md) | `LlmAgent`, `Runner`, sessions, tools, and state management |
+| [Orchestration](nono/agent/README_orchestration.md) | Sequential, Parallel, Loop, and 100 orchestration patterns + 29 domain pipelines |
+| [Orchestration Guide](nono/workflows/README_orchestration_guide.md) | Deterministic, LLM-routing, and hybrid orchestration strategies |
+| [Agent Templates](nono/agent/templates/README_agent_templates.md) | 9 single-agent templates and 29 multi-agent pipelines across 7 domains |
+| [Dynamic Agent Factory](nono/agent/README_agent_factory.md) | Generate agents from natural language descriptions |
+| [Events and Tracing](nono/agent/README_events_tracking.md) | 9 event types, `TraceCollector`, and observability |
+| [State Introspection](nono/README_state_introspection.md) | Query states, transitions, events, and traces during and after execution |
+| [Skills](nono/README_skills.md) | Triple-mode skills: standalone, as tool, or as pipeline component |
+| [Skill Templates](nono/agent/skills/README_skill_templates.md) | Built-in reusable skill catalog |
+| [Human-in-the-Loop](nono/README_human_in_the_loop.md) | `HumanInputAgent`, approval workflows, and HITL protocols |
+
+### Tools and Hooks
+
+| Document | Description |
+|----------|-------------|
+| [Tools](nono/README_tools.md) | `@tool` decorator, `ToolContext`, MCP, and Tasker tools |
+| [ShortFx](nono/README_shortfx.md) | 3,000+ deterministic financial/math formulas for agents |
+| [MCP Client](nono/README_mcp.md) | Connect to Model Context Protocol servers |
+| [Hooks](nono/README_hooks.md) | 6 hook types × 15 lifecycle events |
+
+### Task Execution
+
+| Document | Description |
+|----------|-------------|
+| [Tasker](nono/tasker/README.md) | Task-based execution framework and templates |
+| [Task Configuration](nono/tasker/README_task_configuration.md) | JSON prompt definition guide |
+| [Technical Reference](nono/tasker/README_technical.md) | Tasker architecture and internals |
+| [Batch Processing](nono/connector/README_genai_batch_processing.md) | Token-efficient batch operations with Gemini/OpenAI batch APIs |
+
+### Connectors and Infrastructure
+
+| Document | Description |
+|----------|-------------|
+| [Connector](nono/connector/README_connector_genai.md) | Low-level AI provider interface |
+| [Provider Fallback](nono/connector/README_fallback.md) | Automatic failover between providers |
+| [API Manager](nono/connector/README_api_manager.md) | API key management with keyring |
+| [SSL Configuration](nono/connector/README_connector_genai_ssl.md) | SSL verification modes for corporate environments |
+
+### Workflows and Sandbox
+
+| Document | Description |
+|----------|-------------|
+| [Workflows](nono/workflows/README_workflow.md) | DAG engine with checkpointing, time-travel, and parallel execution |
+| [Sandbox](nono/sandbox/README_sandbox.md) | External sandbox execution (E2B, Modal, Daytona, etc.) |
+| [Sandbox Guide](nono/README_sandbox_guide.md) | Multi-provider sandboxing tutorial with manifests and patterns |
+| [Workspace & Manifest](nono/README_workspace.md) | Declarative agent I/O — entry types, cloud storage, serialisation, and Manifest bridge |
+
+### CLI, Config, and Deployment
+
+| Document | Description |
+|----------|-------------|
+| [CLI Guide](nono/README_cli.md) | Command-line interface usage |
+| [CLI Module](nono/cli/README_cli.md) | CLI module internals |
+| [Configuration Guide](nono/README_config.md) | Unified configuration management |
+| [Config Module](nono/config/README_config.md) | Configuration module internals |
+| [Projects](nono/README_projects.md) | Git-style project discovery and isolated manifests |
+| [Docker Deployment](README_docker.md) | Docker and docker-compose setup |
+| [Executer](nono/executer/README.md) | Code generation and sandboxed execution |
+
+### Community
+
+| Document | Description |
+|----------|-------------|
+| [Features](FEATURES.md) | Full feature breakdown and framework comparisons |
+| [Changelog](CHANGELOG.md) | Version history and release notes |
+| [Contributing](CONTRIBUTING.md) | Contribution guidelines |
+| [Code of Conduct](CODE_OF_CONDUCT.md) | Community code of conduct |
+| [Security](SECURITY.md) | Security policy and vulnerability reporting |
 
 ---
 
@@ -807,10 +278,10 @@ Nono/
 
 | Package | Version | Description |
 |---------|---------|-------------|
-| `google-genai` | >= 1.0.0 | Google Gemini SDK ([docs](https://ai.google.dev/gemini-api/docs)) |
-| `openai` | >= 1.0.0 | OpenAI SDK |
-| `requests` | >= 2.28.0 | HTTP library for API calls |
-| `certifi` | >= 2023.0.0 | SSL certificates for secure connections |
+| `google-genai` | >= 1.0.0 | Google Gemini SDK |
+| `openai` | >= 1.0.0 | OpenAI SDK (also used by Groq, NVIDIA, xAI, DeepSeek, Perplexity, Hugging Face, etc.) |
+| `httpx` | >= 0.24.0 | Async HTTP client |
+| `certifi` | >= 2023.0.0 | SSL certificates |
 | `jsonschema` | >= 4.0.0 | JSON schema validation |
 | `jinja2` | >= 3.0.0 | Template engine for prompts |
 
@@ -826,4 +297,4 @@ Nono/
 
 ## License
 
-MIT © 2026 DatamanEdge. See [LICENSE](../../LICENSE).
+MIT © 2026 DatamanEdge. See [LICENSE](LICENSE).

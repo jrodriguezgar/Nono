@@ -1,0 +1,38 @@
+pipeline {
+    agent any
+
+    options {
+        timestamps()
+    }
+
+    environment {
+        // Replace with your Jenkins secret text credential ID if you remove --dry-run.
+        NONO_API_KEY = credentials('nono-google-api-key')
+    }
+
+    stages {
+        stage('Setup and Run') {
+            steps {
+                script {
+                    if (isUnix()) {
+                        sh '''
+                            python -m venv .venv
+                            . .venv/bin/activate
+                            python -m pip install --upgrade pip
+                            python -m pip install -e .
+                            python -m nono.cli --ci --dry-run --provider google --model gemini-3-flash-preview --prompt "Jenkins example"
+                        '''
+                    } else {
+                        bat '''
+                            python -m venv .venv
+                            call .venv\Scripts\activate
+                            python -m pip install --upgrade pip
+                            python -m pip install -e .
+                            python -m nono.cli --ci --dry-run --provider google --model gemini-3-flash-preview --prompt "Jenkins example"
+                        '''
+                    }
+                }
+            }
+        }
+    }
+}

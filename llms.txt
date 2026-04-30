@@ -4,7 +4,7 @@ Unified AI-powered framework for executing tasks using Generative AI with multi-
 
 ## Context
 
-Nono is a modular Python framework that provides a unified interface for interacting with multiple LLM providers (Google Gemini, OpenAI, Perplexity, DeepSeek, Grok, Ollama). It enables task-based execution with JSON prompt definitions, code generation, batch data processing, and structured outputs with schema validation.
+Nono is a modular Python framework that provides a unified interface for interacting with multiple LLM providers (Google Gemini, OpenAI, Anthropic Claude, Perplexity, DeepSeek, Grok, Groq, Cerebras, NVIDIA, Hugging Face, OpenRouter, Azure AI, Vercel, Ollama). It enables task-based execution with JSON prompt definitions, code generation, batch data processing, and structured outputs with schema validation.
 
 Primary goals:
 - Provider-agnostic AI interactions
@@ -37,6 +37,8 @@ Nono/
 │   │
 │   ├── connector/              # Low-level AI provider connectors
 │   │   ├── connector_genai.py  # Multi-provider client (Gemini, OpenAI, etc.)
+│   │   ├── structured_output.py # Structured output parsers, validation & retry
+│   │   ├── mcp_client.py       # MCP client (connect external MCP servers as tools)
 │   │   ├── api_manager.py      # API key management with keyring
 │   │   └── genai_batch_processing.py  # Batch processing utilities
 │   │
@@ -49,6 +51,38 @@ Nono/
 │   ├── executer/               # Code generation & execution
 │   │   ├── genai_executer.py   # CodeExecuter with security controls
 │   │   └── config.json         # Execution configuration
+│   │
+│   ├── hooks.py                # Lifecycle hooks engine (Pre/PostToolUse, etc.)
+│   │
+│   ├── agent/                  # AI agent framework (NAA)
+│   │   ├── compaction.py       # Auto-compaction strategies (LLM summarisation, token-aware)
+│   │   ├── execution.py        # Agent execution model (task packets, state machine, policies, checkpoints)
+│   │   ├── tool.py             # FunctionTool, ToolContext, @tool decorator
+│   │   ├── agent_card.py       # A2A Agent Card protocol (discovery metadata, /.well-known/agent-card.json)
+│   │   ├── tasker_tool.py      # Bridge TaskExecutor tasks as agent tools
+│   │   ├── tools/              # Built-in ready-to-use tools
+│   │   │   ├── datetime_tools.py  # Date, time, timezone utilities
+│   │   │   ├── text_tools.py      # Text analysis and manipulation
+│   │   │   ├── web_tools.py       # HTTP fetch and URL checking
+│   │   │   ├── python_tools.py    # Math evaluation, code execution
+│   │   │   └── shortfx_tools.py   # ShortFx integration (3,000+ formulas)
+│   │   ├── workspace.py         # Workspace — declarative I/O description (FileEntry, URLEntry, InlineEntry, CloudStorageEntry, TemplateEntry, OutputEntry)
+│   │   └── skills/             # Built-in reusable AI skills
+│   │
+│   ├── sandbox/                # External sandbox execution
+│   │   ├── base.py             # BaseSandboxClient, SandboxProvider, SandboxRunConfig, SandboxResult
+│   │   ├── manifest.py         # Manifest, LocalDir, S3Bucket, GCSBucket, AzureBlob, CloudflareR2
+│   │   ├── sandbox_agent.py    # SandboxAgent, get_sandbox_client()
+│   │   ├── harness.py          # SandboxSnapshot, SnapshotStore, HarnessRuntime (harness/compute separation)
+│   │   ├── durable_agent.py    # DurableSandboxAgent (auto-retry + rehydration)
+│   │   └── clients/            # Provider clients
+│   │       ├── e2b.py          # E2B cloud sandbox (e2b-code-interpreter)
+│   │       ├── modal.py        # Modal serverless containers (modal)
+│   │       ├── daytona.py      # Daytona dev environments (daytona-sdk)
+│   │       ├── blaxel.py       # Blaxel cloud sandboxes (blaxel)
+│   │       ├── cloudflare.py   # Cloudflare Workers containers (cloudflare)
+│   │       ├── runloop.py      # Runloop dev-boxes (runloop-api-client)
+│   │       └── vercel.py       # Vercel sandboxes (httpx)
 │   │
 │   └── examples/               # Usage examples
 │       ├── cli_example.py
@@ -209,6 +243,347 @@ from nono.connector import configure_ssl_verification, SSLVerificationMode
 configure_ssl_verification(SSLVerificationMode.CERTIFI)
 ```
 
+### Structured Output (`nono.connector.structured_output`)
+
+```python
+from pydantic import BaseModel
+from nono.connector import (
+    StructuredGenerator, PydanticOutputParser, JsonOutputParser,
+    RegexOutputParser, CsvOutputParser, ParseError, MaxRetriesExceededError,
+    parse_json, parse_pydantic, parse_csv,
+)
+
+# Pydantic model validation with retry
+class Sentiment(BaseModel):
+    label: str
+    score: float
+
+gen = StructuredGenerator(service, model=Sentiment, max_retries=2)
+result = gen.generate([{"role": "user", "content": "Analyze sentiment."}])
+# result is a Sentiment instance
+
+# Agent-level integration
+from nono.agent import Agent
+agent = Agent(
+    name="classifier", instruction="Classify text.",
+    output_model=Sentiment, output_retries=3,
+)
+
+# Convenience one-shot parsing
+data = parse_json('{"key": "value"}')
+sentiment = parse_pydantic('{"label": "positive", "score": 0.9}', Sentiment)
+rows = parse_csv("name,age\nAlice,30")
+```
+
+### Auto-Compaction (`nono.agent.compaction`)
+
+```python
+from nono.agent import (
+    Agent, SummarizationStrategy, TokenAwareStrategy,
+    CallableStrategy, CompactionResult, CompactionStrategy,
+)
+
+# Enable LLM-based compaction (uses agent's own service)
+agent = Agent(name="assistant", instruction="Help me.", compaction=True)
+
+# Custom strategy
+agent = Agent(
+    name="assistant",
+    compaction=SummarizationStrategy(
+        trigger_ratio=0.75,     # fire at 75% of max_loop_messages
+        keep_recent=6,          # keep 6 most recent messages verbatim
+        summary_max_tokens=500,
+    ),
+)
+
+# Token-aware variant
+agent = Agent(
+    name="assistant",
+    compaction=TokenAwareStrategy(
+        max_context_tokens=100_000,
+        trigger_ratio=0.75,
+    ),
+)
+
+# Default (compaction=None) uses _prune_messages sliding window
+agent = Agent(name="assistant", instruction="Help me.")
+
+# Plain function (auto-wrapped in CallableStrategy)
+def my_compactor(messages, max_messages):
+    return [messages[0]] + messages[-(max_messages - 1):]
+
+agent = Agent(name="assistant", compaction=my_compactor)
+
+# External strategy via import path (plugin / config-driven)
+agent = Agent(name="assistant", compaction="mypackage.compaction.MyStrategy")
+```
+
+### Token-Level Streaming (`nono.connector`, `nono.agent`, `nono.server`)
+
+Native token-by-token streaming for 11+ providers via `generate_completion_stream()`.
+
+```python
+from nono.agent import Agent, Runner
+
+agent = Agent(name="writer", model="gemini-3-flash-preview", instruction="Write a story.")
+runner = Runner(agent)
+
+# Token-level streaming
+for event in runner.stream_text(user_input="Tell me a tale"):
+    if event.type.value == "text_chunk":
+        print(event.data["chunk"], end="", flush=True)
+```
+
+SSE endpoint: `POST /agent/{name}/stream/text`
+
+Streaming tool calls: `StreamChunk` with `type="tool_call"` yields incremental function-call arguments via `TOOL_CALL_CHUNK` events. Native support for OpenAI-compatible providers + Cerebras.
+
+### Agent Execution Model (`nono.agent.execution`)
+
+```python
+from nono.agent import (
+    TaskPacket, EscalationPolicy, ReportingContract,
+    WorkerStateMachine, WorkerState,
+    FailureClassifier, FailureCategory, RecoveryRecipe,
+    PolicyEngine, PolicyRule, PolicyResult, CallablePolicy,
+    AutoMergePolicy, StaleBranchPolicy, StartupRecoveryPolicy,
+    LaneCompletionPolicy, DegradedModePolicy,
+    VerificationContract, VerificationLevel, VerificationResult,
+    WorktreeManager, WorktreeInfo,
+    StaleBranchDetector, BranchStatus,
+    ConversationCheckpointManager, ConversationCheckpoint,
+    PlanModeAgent, PlanResult,
+)
+
+# Typed task packets
+packet = TaskPacket(
+    objective="Fix login timeout bug",
+    scope=["src/auth/"],
+    acceptance_tests=["pytest tests/test_auth.py"],
+)
+data = packet.to_json()
+restored = TaskPacket.from_json(data)
+
+# Worker state machine (thread-safe, 8 states)
+sm = WorkerStateMachine()
+sm.transition(WorkerState.RUNNING)
+sm.transition(WorkerState.FINISHED)
+
+# Failure classifier (10 categories + recovery recipes)
+classifier = FailureClassifier()
+result = classifier.classify(Exception("rate limit exceeded"))
+print(result.category, result.recipe)
+
+# Policy engine (5 built-in + custom + callable + from_config)
+engine = PolicyEngine.default()
+engine.register_callable("custom", lambda ctx: PolicyResult(triggered=False), priority=10)
+engine.disable("auto_merge")
+results = engine.evaluate({"tests_pass": True})
+config = engine.to_config()
+
+# Verification contract (4 levels)
+contract = VerificationContract()
+contract.verify_up_to(VerificationLevel.MODULE_GREEN)
+
+# Worktree isolation
+mgr = WorktreeManager(repo_root="/repo")
+info = mgr.create(branch="fix/123", path="/tmp/wt")
+
+# Stale-branch detection
+detector = StaleBranchDetector(repo_root="/repo")
+status = detector.check("feature/old", reference="main")
+
+# Conversation checkpoints
+cpm = ConversationCheckpointManager()
+cpm.save("session-1", events=[], state={}, messages=[])
+
+# Plan mode (read-only exploration)
+planner = PlanModeAgent(agent)
+plan = planner.plan("How to refactor auth?")
+```
+
+### MCP Client (`nono.connector.mcp_client`)
+
+```python
+from nono.connector.mcp_client import MCPClient, mcp_tools
+from nono.agent import Agent, Runner
+
+# Connect to stdio MCP server
+client = MCPClient.stdio("uvx", args=["mcp-server-filesystem", "/tmp"])
+tools = client.get_tools()
+
+# Or use convenience function
+tools = mcp_tools(command="uvx", args=["mcp-server-filesystem", "/tmp"])
+
+# Attach to an agent
+agent = Agent(name="assistant", instruction="Help with files.", tools=tools)
+result = Runner(agent).run("List files in /tmp")
+```
+
+### Dynamic Agent Factory (`nono.agent.agent_factory`)
+
+```python
+from nono.agent import AgentFactory, create_agent_from_prompt
+from nono.agent.tool import tool
+
+@tool(description="Search the web.")
+def web_search(query: str) -> str: ...
+
+# One-liner (requires agent.factory.allow_dynamic_creation = true)
+agent = create_agent_from_prompt(
+    "A research agent that searches the web and summarises findings.",
+    available_tools=[web_search],
+)
+
+# Full control — blueprint review before build
+factory = AgentFactory()
+blueprint = factory.generate_blueprint(
+    "An agent that analyses CSV data.",
+    available_tools=[csv_reader],
+)
+print(blueprint.to_dict())  # inspect
+agent = factory.build(blueprint, available_tools=[csv_reader])
+
+# Orchestrated multi-agent — factory picks the best pattern
+from nono.agent import OrchestrationBlueprint
+
+orch_bp = factory.generate_orchestrated_blueprint(
+    "Research a topic, then write an article, then review it.",
+    available_tools=[web_search],
+)
+print(orch_bp.pattern)             # e.g. 'sequential'
+print(orch_bp.sub_agent_blueprints) # inspect sub-agents
+agent = factory.build_orchestrated(orch_bp, available_tools=[web_search])
+
+# Human-in-the-loop review
+agent = create_agent_from_prompt(
+    "A data analyst agent.",
+    review_callback=lambda bp: input(f"Approve {bp.name}? (y/n) ") == "y",
+)
+
+# Register a custom orchestration pattern
+from nono.agent import register_pattern, OrchestrationRegistry
+
+def my_factory(*, name, description, sub_agents, provider, model, pattern_kwargs):
+    from my_module import MyCustomAgent
+    return MyCustomAgent(sub_agents=sub_agents, name=name, description=description)
+
+register_pattern(
+    key="my_custom",
+    class_name="MyCustomAgent",
+    description="My domain-specific orchestration",
+    keyword_hints=["custom", "special workflow"],
+    factory=my_factory,
+    min_sub_agents=2,
+)
+
+# The pattern is now available to AgentFactory and OrchestrationSelector
+print(OrchestrationRegistry.list_patterns())  # includes "my_custom"
+```
+
+### Agent State Management (`nono.agent.base`)
+
+```python
+from nono.agent import Session, InvocationContext, Agent, Runner
+
+# Session with initial state and optional persistent memory
+session = Session(
+    session_id="conv-42",
+    state={"lang": "es"},
+    memory=kim_instance,  # optional KeepInMind
+    max_events=500,       # 0 = unlimited
+)
+
+# Thread-safe state access (required inside ParallelAgent)
+session.state_set("counter", 0)
+session.state_update({"a": 1, "b": 2})
+val = session.state_get("counter", default=0)
+
+# Two content scopes
+session.shared_content.save("report", "Visible to all agents")  # session-wide
+agent.local_content.save("scratch", "Private to this agent")    # per-agent
+
+# SharedContent limits: 200 items (LRU), 10 MB per item
+
+# State isolation — new Session for full independence
+isolated = Session()
+ctx = InvocationContext(session=isolated, user_message="Independent task")
+response = sub_agent.run(ctx)
+
+# InvocationContext: MAX_TRANSFER_DEPTH = 10 (anti-loop guard)
+```
+
+### State Introspection (`nono.workflows`, `nono.agent`, `nono.tracing`)
+
+```python
+# Workflow: real-time streaming
+for step_name, state in flow.stream():
+    print(step_name, state)
+
+# Workflow: post-execution audit trail
+for t in flow.transitions:
+    print(t.step, t.keys_changed, t.duration_ms)
+
+# Workflow: time-travel to any past step
+state_at = flow.get_state_at("clean")
+
+# Workflow: full execution history
+history = flow.get_history()  # [(step, state), ...]
+
+# Workflow: replay with overrides
+result = flow.replay_from("fetch", rows=200)
+
+# Workflow: graph introspection
+flow.steps       # ['fetch', 'clean', 'analyze']
+flow.describe()  # text summary of edges and branches
+flow.draw()      # ASCII diagram
+
+# Workflow: checkpoints
+flow.list_checkpoints()       # [(index, step_name), ...]
+flow.get_checkpoint_at("a")   # state dict from disk
+
+# Agent: event streaming
+for event in runner.stream("Hello"):
+    print(event.event_type, event.content)
+
+# Agent: post-execution events and state
+runner.session.events      # list[Event]
+runner.session.last_event  # Event | None
+runner.session.state       # dict
+
+# Tracing: structured observability
+from nono.tracing import TraceCollector
+collector = TraceCollector()
+runner = Runner(agent, trace_collector=collector)
+runner.run("Hello")
+collector.traces           # list[Trace]
+collector.total_tokens     # int
+collector.total_llm_calls  # int
+collector.export()         # list[dict] (serializable)
+collector.print_summary()  # human-readable output
+```
+
+### REST API Introspection (`nono.server`)
+
+```python
+# Workflow: run with introspection (POST /workflow/{name})
+# Request: {"state": {...}, "introspect": true}
+# Response includes: transitions[], state_history[], graph, ascii_diagram
+
+# Workflow: describe graph without executing (GET /workflow/{name}/describe)
+# Response: steps[], graph, ascii_diagram, schema
+
+# Agent: run with introspection (POST /agent/{name})
+# Request: {"message": "...", "introspect": true}
+# Response includes: events[], state, event_count
+
+# Agent: stream events in real-time (POST /agent/{name}/stream)
+# SSE: data: {"agent": "...", "type": "...", "content": "...", "timestamp": "..."}
+
+# Combine both flags for maximum observability:
+# {"state": {...}, "trace": true, "introspect": true}
+```
+
 ### Tasker Module (`nono.tasker`)
 
 ```python
@@ -226,6 +601,69 @@ prompts = build_from_file_blocks(
     "data_loss_prevention.j2",
     text="John Smith, SSN: 123-45-6789",
     compliance="GDPR"
+)
+```
+
+### Hooks Module (`nono.hooks`)
+
+```python
+from nono.hooks import HookManager, HookEvent, Hook, HookType, HookContext, HookResult, discover_hooks, load_agent_scoped_hooks
+
+# Create a hook manager
+manager = HookManager()
+
+# Register a Python callable hook
+def on_pre_tool(ctx: HookContext) -> HookResult:
+    if ctx.tool_name == "dangerous_tool":
+        return HookResult(block=True, block_reason="Tool blocked by policy")
+    return HookResult()
+
+manager.register(HookEvent.PRE_TOOL_USE, Hook(fn=on_pre_tool))
+
+# Register a GenAI prompt hook
+manager.register(HookEvent.POST_TOOL_USE, Hook(
+    prompt="Validate output: {tool_response}",
+    provider="google", model="gemini-3-flash-preview",
+))
+
+# Register a task hook (loads prompts/review_output.json)
+manager.register(HookEvent.POST_TOOL_USE, Hook(task="review_output"))
+
+# Register a skill hook
+manager.register(HookEvent.POST_AGENT_RUN, Hook(skill="summarize_skill"))
+
+# Register a tool hook
+manager.register(HookEvent.PRE_TOOL_USE, Hook(
+    tool="audit_logger", tool_args={"action": "call", "target": "{tool_name}"},
+))
+
+# Load hooks from JSON config (supports all 6 types)
+manager.load_config({
+    "hooks": {
+        "PostToolUse": [
+            {"type": "command", "command": "echo tool done", "matcher": "Write|Edit"},
+            {"type": "prompt", "prompt": "Summarize: {tool_response}"},
+            {"type": "task", "task": "review_output"},
+            {"type": "skill", "skill": "summarize_skill"},
+            {"type": "tool", "tool": "log_action", "tool_args": {"msg": "{tool_name}"}}
+        ]
+    }
+})
+
+# Load from file
+manager.load_file(".github/hooks/format.json")
+
+# Auto-discover hooks from .github/hooks/, .claude/, ~/.copilot/hooks/, etc.
+manager = discover_hooks("/path/to/workspace")
+
+# Load agent-scoped hooks from .agent.md frontmatter
+agent_hooks = load_agent_scoped_hooks(".github/agents/formatter.agent.md")
+
+# Attach to an agent
+from nono.agent import Agent
+agent = Agent(
+    name="helper", model="gemini-3-flash-preview", provider="google",
+    instruction="You are helpful.", hook_manager=manager,
 )
 ```
 
@@ -321,6 +759,12 @@ mypy nono/
 | `nono/cli.py` | Main CLI entry point and utilities |
 | `nono/config.py` | Unified configuration management |
 | `nono/connector/connector_genai.py` | Multi-provider AI client |
+| `nono/connector/mcp_client.py` | MCP client — bridge external MCP servers into Nono tools |
+| `nono/hooks.py` | Lifecycle hooks engine — 6 types: function, command, prompt, task, skill, tool |
+| `nono/README_skills.md` | Skills documentation — creation tutorial, tool propagation, dynamic discovery |
+| `nono/agent/agent_factory.py` | Dynamic agent generation from natural language |
+| `nono/agent/execution.py` | Agent execution model — task packets, state machine, policies, verification, worktree, checkpoints, plan mode |
+| `nono/agent/templates/pipelines.py` | 29 multi-agent pipelines across 7 domains (dev, architecture, ops, data, AI/ML, content, security) |
 | `nono/tasker/genai_tasker.py` | Task execution framework |
 | `nono/executer/genai_executer.py` | Code generation and execution |
 | `nono/config.toml` | Default configuration |
