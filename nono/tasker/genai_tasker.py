@@ -19,15 +19,12 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional, Union
+import threading
 
 
 # Configure Logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[logging.StreamHandler()]
-)
 logger = logging.getLogger("GenAITaskExecutor")
+logger.addHandler(logging.NullHandler())
 
 
 def msg_log(message: str, level: int = logging.INFO) -> None:
@@ -42,8 +39,6 @@ def msg_log(message: str, level: int = logging.INFO) -> None:
         None
     """
     logger.log(level, message)
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"{timestamp} - [{logging.getLevelName(level)}] {message}")
 
 
 def event_log(message: Optional[str] = None, level: int = logging.INFO):
@@ -87,6 +82,7 @@ class AIProvider(Enum):
     GROK = "grok"
     GROQ = "groq"
     OPENROUTER = "openrouter"
+    HUGGINGFACE = "huggingface"
     OLLAMA = "ollama"
 
 
@@ -129,6 +125,7 @@ class BaseAIClient(ABC):
         """
         self.config = config
         self.service = None  # To be initialized by subclasses
+        self._model_lock = threading.Lock()
 
     @event_log(message="AI Content Generation")
     def generate_content(
@@ -186,12 +183,20 @@ class BaseAIClient(ABC):
             if override_model and self.service and hasattr(self.service, 'model_name') and self.service.model_name != override_model:
                 logger.info(f"Overriding model: {self.service.model_name} -> {override_model}")
                 original_model_name = self.service.model_name
-                self.service.model_name = override_model
+                self._model_lock.acquire()
+                try:
+                    self.service.model_name = override_model
+                except Exception:
+                    self._model_lock.release()
+                    raise
 
             logger.info(f"Sending request to {self.config.provider.value} ({self.service.model_name if self.service else self.config.model_name})...")
             
             # Call generate_completion on the service
             if not self.service:
+                if original_model_name:
+                    self.service.model_name = original_model_name
+                    self._model_lock.release()
                 raise ValueError("AI Service not initialized.")
             
             # Determine response format
@@ -227,6 +232,7 @@ class BaseAIClient(ABC):
                 # Restore original model name if it was changed
                 if original_model_name:
                     self.service.model_name = original_model_name
+                    self._model_lock.release()
             
             return response_text
         except Exception as e:
@@ -613,6 +619,8 @@ class TaskExecutor:
              else:
                  output_format = "text"
 
+        _MAX_MERGE_ITEMS = 50_000
+
         if output_format == "json":
              # Try to merge JSONs
              merged_list = []
@@ -626,6 +634,10 @@ class TaskExecutor:
                      if isinstance(parsed, list):
                          is_list_mode = True
                          merged_list.extend(parsed)
+                         if len(merged_list) > _MAX_MERGE_ITEMS:
+                             merged_list = merged_list[:_MAX_MERGE_ITEMS]
+                             logger.warning("Batch merge list capped at %d items.", _MAX_MERGE_ITEMS)
+                             break
                      elif isinstance(parsed, dict):
                          # Merge dicts
                          for k, v in parsed.items():
@@ -635,8 +647,14 @@ class TaskExecutor:
                                  # else: overwrite or complex merge strategy not implemented
                              else:
                                  merged_dict[k] = v
+                         if len(merged_dict) > _MAX_MERGE_ITEMS:
+                             logger.warning("Batch merge dict capped at %d keys.", _MAX_MERGE_ITEMS)
+                             break
                  except Exception:
-                     pass # Ignore parse errors in chunks
+                     logger.warning(
+                         "Skipping unparseable JSON chunk (%d chars) in batch merge",
+                         len(str(res)),
+                     )
              
              if is_list_mode and not merged_dict:
                  return json.dumps(merged_list, indent=2, ensure_ascii=False)
@@ -727,6 +745,7 @@ class TaskExecutor:
             AIProvider.GROK: connector_genai.GrokService,
             AIProvider.GROQ: connector_genai.GroqService,
             AIProvider.OPENROUTER: connector_genai.OpenRouterService,
+            AIProvider.HUGGINGFACE: connector_genai.HuggingFaceService,
             AIProvider.OLLAMA: connector_genai.OllamaService,
         }
         return service_map.get(provider)
@@ -766,7 +785,14 @@ class TaskExecutor:
         """
         if not os.path.exists(task_file):
             raise FileNotFoundError(f"Task file not found: {task_file}")
-        
+
+        _MAX_TASK_FILE_SIZE = 1_048_576  # 1 MB
+        file_size = os.path.getsize(task_file)
+        if file_size > _MAX_TASK_FILE_SIZE:
+            raise ValueError(
+                f"Task file too large ({file_size} bytes, max {_MAX_TASK_FILE_SIZE})."
+            )
+
         with open(task_file, 'r', encoding='utf-8') as f:
             task_def = json.load(f)
         

@@ -1,0 +1,49 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Code Review Report",
+  "type": "object",
+  "required": ["overall_score", "issues", "strengths", "summary"],
+  "properties": {
+    "overall_score": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10,
+      "description": "Overall code quality score (1-10)"
+    },
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["severity", "description", "suggestion"],
+        "properties": {
+          "severity": {
+            "type": "string",
+            "enum": ["high", "medium", "low"]
+          },
+          "line": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Line number where the issue was found"
+          },
+          "description": {
+            "type": "string",
+            "description": "What the issue is"
+          },
+          "suggestion": {
+            "type": "string",
+            "description": "How to fix the issue"
+          }
+        }
+      }
+    },
+    "strengths": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Positive aspects of the code"
+    },
+    "summary": {
+      "type": "string",
+      "description": "Brief overall assessment"
+    }
+  }
+}

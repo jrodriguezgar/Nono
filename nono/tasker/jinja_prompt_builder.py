@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union, Callable
 
@@ -45,7 +46,6 @@ TEMPLATES_DIR = Path(__file__).parent / "templates"
 
 def to_compact_json(value: Any) -> str:
     """Convert value to compact JSON string (no whitespace)."""
-    return json.dumps(value, ensure_ascii=False, separators=(',', ':'))
     return json.dumps(value, ensure_ascii=False, separators=(',', ':'))
 
 
@@ -249,8 +249,9 @@ class TaskPromptBuilder:
         # Find template file
         template_path = None
         for search_path in paths:
-            candidate = Path(search_path) / template_name
-            if candidate.exists():
+            candidate = (Path(search_path) / template_name).resolve()
+            # Path-traversal guard: resolved path must stay inside search_path
+            if candidate.is_relative_to(Path(search_path).resolve()) and candidate.exists():
                 template_path = candidate
                 break
         
@@ -306,8 +307,6 @@ class TaskPromptBuilder:
             >>> print(prompts["system"])  # System prompt
             >>> print(prompts["user"])    # User prompt
         """
-        import re
-        
         # Ensure .j2 extension
         if not template_name.endswith('.j2'):
             template_name += '.j2'
@@ -320,8 +319,9 @@ class TaskPromptBuilder:
         # Find template file
         template_path = None
         for search_path in paths:
-            candidate = Path(search_path) / template_name
-            if candidate.exists():
+            candidate = (Path(search_path) / template_name).resolve()
+            # Path-traversal guard: resolved path must stay inside search_path
+            if candidate.is_relative_to(Path(search_path).resolve()) and candidate.exists():
                 template_path = candidate
                 break
         
@@ -419,8 +419,6 @@ class TaskPromptBuilder:
         Returns:
             Jinja2-compatible template string.
         """
-        import re
-        
         # First, handle the special data_input_json placeholder
         result = template.replace("{data_input_json}", "{{ data | to_json }}")
         

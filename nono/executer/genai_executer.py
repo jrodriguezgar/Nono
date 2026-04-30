@@ -10,15 +10,19 @@ License: MIT
 Version: 1.0.0
 """
 
+import io
 import os
+import re
 import sys
 import json
 import logging
 import functools
 import subprocess
 import tempfile
+import threading
 import traceback
 from abc import ABC, abstractmethod
+from contextlib import redirect_stdout, redirect_stderr
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -26,12 +30,8 @@ from typing import Any, Dict, List, Optional, Union
 
 
 # Configure Logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[logging.StreamHandler()]
-)
 logger = logging.getLogger("GenAICodeExecuter")
+logger.addHandler(logging.NullHandler())
 
 
 def msg_log(message: str, level: int = logging.INFO) -> None:
@@ -46,8 +46,6 @@ def msg_log(message: str, level: int = logging.INFO) -> None:
         None
     """
     logger.log(level, message)
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"{timestamp} - [{logging.getLevelName(level)}] {message}")
 
 
 def event_log(message: Optional[str] = None, level: int = logging.INFO):
@@ -160,6 +158,25 @@ except ImportError:
 # Code generation template file (located in tasker/templates/)
 CODE_GENERATION_TEMPLATE = "python_programming.j2"
 
+# Restricted builtins for sandboxed exec() — no open/eval/exec/compile/__import__
+_SAFE_BUILTINS: dict[str, Any] = {
+    "print": print, "range": range, "len": len, "int": int,
+    "float": float, "str": str, "bool": bool, "list": list,
+    "dict": dict, "tuple": tuple, "set": set, "frozenset": frozenset,
+    "sum": sum, "min": min, "max": max, "abs": abs, "round": round,
+    "sorted": sorted, "reversed": reversed, "enumerate": enumerate,
+    "zip": zip, "map": map, "filter": filter, "any": any, "all": all,
+    "isinstance": isinstance, "issubclass": issubclass, "type": type,
+    "hasattr": hasattr,
+    "repr": repr, "hash": hash, "id": id, "chr": chr, "ord": ord,
+    "hex": hex, "oct": oct, "bin": bin, "format": format,
+    "True": True, "False": False, "None": None,
+    "ValueError": ValueError, "TypeError": TypeError,
+    "KeyError": KeyError, "IndexError": IndexError,
+    "RuntimeError": RuntimeError, "StopIteration": StopIteration,
+    "Exception": Exception,
+}
+
 
 class CodeExecuter:
     """
@@ -185,43 +202,76 @@ class CodeExecuter:
         "string", "textwrap", "unicodedata", "typing"
     ]
     
-    # Dangerous patterns blocked in SAFE mode
+    # Dangerous patterns blocked in SAFE mode (pre-compiled)
     DANGEROUS_PATTERNS = [
         # File write/delete operations
-        r"\bopen\s*\([^)]*['\"][wa]",  # open(..., 'w') or open(..., 'a')
-        r"\bos\.remove\b", r"\bos\.unlink\b", r"\bos\.rmdir\b",
-        r"\bshutil\.rmtree\b", r"\bshutil\.move\b", r"\bshutil\.copy\b",
-        r"\bpathlib\.Path\([^)]*\)\.unlink\b",
-        r"\bpathlib\.Path\([^)]*\)\.rmdir\b",
-        r"\.write\s*\(", r"\.writelines\s*\(",
-        
+        re.compile(r"\bopen\s*\([^)]*['\"][wa]", re.IGNORECASE),
+        re.compile(r"\bos\.remove\b", re.IGNORECASE),
+        re.compile(r"\bos\.unlink\b", re.IGNORECASE),
+        re.compile(r"\bos\.rmdir\b", re.IGNORECASE),
+        re.compile(r"\bshutil\.rmtree\b", re.IGNORECASE),
+        re.compile(r"\bshutil\.move\b", re.IGNORECASE),
+        re.compile(r"\bshutil\.copy\b", re.IGNORECASE),
+        re.compile(r"\bpathlib\.Path\([^)]*\)\.unlink\b", re.IGNORECASE),
+        re.compile(r"\bpathlib\.Path\([^)]*\)\.rmdir\b", re.IGNORECASE),
+        re.compile(r"\.write\s*\(", re.IGNORECASE),
+        re.compile(r"\.writelines\s*\(", re.IGNORECASE),
         # Network operations
-        r"\brequests\.", r"\burllib\.", r"\bhttpx\.",
-        r"\bsocket\.", r"\bhttp\.client\.",
-        r"\baiohttp\.", r"\bftplib\.",
-        
+        re.compile(r"\brequests\.", re.IGNORECASE),
+        re.compile(r"\burllib\.", re.IGNORECASE),
+        re.compile(r"\bhttpx\.", re.IGNORECASE),
+        re.compile(r"\bsocket\.", re.IGNORECASE),
+        re.compile(r"\bhttp\.client\.", re.IGNORECASE),
+        re.compile(r"\baiohttp\.", re.IGNORECASE),
+        re.compile(r"\bftplib\.", re.IGNORECASE),
         # System command execution
-        r"\bos\.system\b", r"\bos\.popen\b", r"\bos\.spawn",
-        r"\bsubprocess\.", r"\bcommands\.",
-        
+        re.compile(r"\bos\.system\b", re.IGNORECASE),
+        re.compile(r"\bos\.popen\b", re.IGNORECASE),
+        re.compile(r"\bos\.spawn", re.IGNORECASE),
+        re.compile(r"\bsubprocess\.", re.IGNORECASE),
+        re.compile(r"\bcommands\.", re.IGNORECASE),
         # Dynamic code execution
-        r"\beval\s*\(", r"\bexec\s*\(", r"\bcompile\s*\(",
-        
+        re.compile(r"\beval\s*\(", re.IGNORECASE),
+        re.compile(r"\bexec\s*\(", re.IGNORECASE),
+        re.compile(r"\bcompile\s*\(", re.IGNORECASE),
         # Module manipulation
-        r"\b__import__\s*\(", r"\bimportlib\.",
-        
+        re.compile(r"\b__import__\s*\(", re.IGNORECASE),
+        re.compile(r"\bimportlib\.", re.IGNORECASE),
         # Environment manipulation
-        r"\bos\.environ\[", r"\bos\.putenv\b", r"\bos\.setenv\b",
-        
+        re.compile(r"\bos\.environ\[", re.IGNORECASE),
+        re.compile(r"\bos\.putenv\b", re.IGNORECASE),
+        re.compile(r"\bos\.setenv\b", re.IGNORECASE),
         # Process manipulation
-        r"\bos\.kill\b", r"\bos\.fork\b", r"\bos\.exec",
-        r"\bmultiprocessing\.", r"\bthreading\."
+        re.compile(r"\bos\.kill\b", re.IGNORECASE),
+        re.compile(r"\bos\.fork\b", re.IGNORECASE),
+        re.compile(r"\bos\.exec", re.IGNORECASE),
+        re.compile(r"\bmultiprocessing\.", re.IGNORECASE),
+        re.compile(r"\bthreading\.", re.IGNORECASE),
+        # Dunder attribute access — blocks type-hierarchy traversal
+        # (e.g. ().__class__.__base__.__subclasses__() → os._wrap_close → os.system)
+        re.compile(r"__subclasses__"),
+        re.compile(r"__mro__"),
+        re.compile(r"__base__"),
+        re.compile(r"__bases__"),
+        re.compile(r"__globals__"),
+        re.compile(r"__builtins__"),
+        re.compile(r"__code__"),
+        re.compile(r"__reduce__"),
+        re.compile(r"__reduce_ex__"),
+        re.compile(r"__getattr__"),
+        re.compile(r"__init_subclass__"),
+        # Block globals()/locals() — prevents sandbox code from mutating __builtins__
+        re.compile(r"\bglobals\s*\("),
+        re.compile(r"\blocals\s*\("),
     ]
     
-    # Warning patterns (allowed but logged in SAFE mode)
+    # Warning patterns (allowed but logged in SAFE mode, pre-compiled)
     WARNING_PATTERNS = [
-        r"\bos\.listdir\b", r"\bos\.walk\b", r"\bos\.path\.",
-        r"\bglob\.", r"\bpathlib\.Path\("
+        re.compile(r"\bos\.listdir\b", re.IGNORECASE),
+        re.compile(r"\bos\.walk\b", re.IGNORECASE),
+        re.compile(r"\bos\.path\.", re.IGNORECASE),
+        re.compile(r"\bglob\.", re.IGNORECASE),
+        re.compile(r"\bpathlib\.Path\(", re.IGNORECASE),
     ]
     
     def __init__(
@@ -393,23 +443,21 @@ class CodeExecuter:
         Returns:
             Tuple of (is_safe, list_of_violations).
         """
-        import re
-        
         if self.security_mode == SecurityMode.PERMISSIVE:
             return True, []
         
         violations = []
         warnings = []
         
-        # Check for dangerous patterns
+        # Check for dangerous patterns (pre-compiled)
         for pattern in self.DANGEROUS_PATTERNS:
-            if re.search(pattern, code, re.IGNORECASE):
-                violations.append(f"Blocked pattern detected: {pattern}")
+            if pattern.search(code):
+                violations.append(f"Blocked pattern detected: {pattern.pattern}")
         
-        # Check for warning patterns (log but don't block)
+        # Check for warning patterns (log but don't block, pre-compiled)
         for pattern in self.WARNING_PATTERNS:
-            if re.search(pattern, code, re.IGNORECASE):
-                warnings.append(f"Warning pattern: {pattern}")
+            if pattern.search(code):
+                warnings.append(f"Warning pattern: {pattern.pattern}")
         
         # Log warnings
         for warning in warnings:
@@ -510,41 +558,93 @@ class CodeExecuter:
             # Clean up temp file
             try:
                 os.unlink(temp_file)
-            except:
+            except OSError:
                 pass
     
     @event_log(message="Code Execution (Exec)")
-    def _execute_exec(self, code: str) -> ExecutionResult:
+    def _execute_exec(self, code: str, timeout: int = 30) -> ExecutionResult:
         """
         Execute code using Python's exec() function.
         
         Args:
             code: Python code to execute.
+            timeout: Maximum execution time in seconds.
         
         Returns:
             ExecutionResult with output and status.
         """
-        import io
-        from contextlib import redirect_stdout, redirect_stderr
-        
         start_time = datetime.now()
         
         # Capture stdout and stderr
         stdout_capture = io.StringIO()
         stderr_capture = io.StringIO()
         
-        # Create execution namespace
+        # Create execution namespace with restricted builtins
         exec_globals = {
-            "__builtins__": __builtins__,
+            "__builtins__": _SAFE_BUILTINS,
             "__name__": "__main__",
         }
         
-        try:
-            with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
-                exec(code, exec_globals)
-            
+        _thread_exc: list[BaseException] = []
+
+        def _run() -> None:
+            try:
+                with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
+                    exec(code, exec_globals)  # noqa: S102
+            except BaseException as exc:
+                _thread_exc.append(exc)
+
+        # Guard against unbounded leaked-thread accumulation
+        _MAX_LEAKED_EXEC_THREADS = 8
+        leaked = sum(
+            1 for t in threading.enumerate()
+            if t.name.startswith("nono-exec-") and t.is_alive()
+        )
+        if leaked >= _MAX_LEAKED_EXEC_THREADS:
+            return ExecutionResult(
+                success=False,
+                output="",
+                error=(
+                    f"Too many timed-out exec threads ({leaked}). "
+                    "Refusing new execution to prevent resource exhaustion."
+                ),
+                code=code,
+                execution_time=0.0,
+            )
+
+        runner = threading.Thread(target=_run, daemon=True, name="nono-exec-sandbox")
+        runner.start()
+        runner.join(timeout=timeout)
+
+        if runner.is_alive():
             execution_time = (datetime.now() - start_time).total_seconds()
-            
+            logger.warning(
+                "Exec thread leaked (timed out after %ds). "
+                "Active leaked threads: %d",
+                timeout, leaked + 1,
+            )
+            return ExecutionResult(
+                success=False,
+                output=stdout_capture.getvalue(),
+                error=f"Execution timed out after {timeout}s",
+                code=code,
+                execution_time=execution_time,
+            )
+        
+        try:
+            execution_time = (datetime.now() - start_time).total_seconds()
+
+            if _thread_exc:
+                exc = _thread_exc[0]
+                error_msg = f"{type(exc).__name__}: {exc}"
+                return ExecutionResult(
+                    success=False,
+                    output=stdout_capture.getvalue(),
+                    error=error_msg,
+                    code=code,
+                    execution_time=execution_time,
+                )
+
             return ExecutionResult(
                 success=True,
                 output=stdout_capture.getvalue(),
@@ -565,6 +665,9 @@ class CodeExecuter:
                 code=code,
                 execution_time=execution_time
             )
+        finally:
+            stdout_capture.close()
+            stderr_capture.close()
     
     def execute_code(self, code: str, timeout: int = 30) -> ExecutionResult:
         """
@@ -601,7 +704,7 @@ class CodeExecuter:
         if self.execution_mode == ExecutionMode.SUBPROCESS:
             return self._execute_subprocess(code, timeout)
         else:
-            return self._execute_exec(code)
+            return self._execute_exec(code, timeout)
     
     @event_log(message="Generate and Execute")
     def run(

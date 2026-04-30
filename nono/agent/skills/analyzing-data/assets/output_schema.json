@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Data Analysis Output",
+  "type": "object",
+  "required": ["summary", "insights"],
+  "properties": {
+    "summary": {
+      "type": "string",
+      "description": "Brief overall description of the dataset and findings."
+    },
+    "data_quality": {
+      "type": "object",
+      "properties": {
+        "total_rows": { "type": "integer" },
+        "missing_values": {
+          "type": "object",
+          "additionalProperties": { "type": "integer" }
+        },
+        "duplicates": { "type": "integer" },
+        "outliers_detected": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "statistics": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "mean": { "type": "number" },
+          "median": { "type": "number" },
+          "std": { "type": "number" },
+          "min": { "type": "number" },
+          "max": { "type": "number" }
+        }
+      }
+    },
+    "insights": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1
+    },
+    "recommendations": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "visualization_suggestions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "chart": { "type": "string" },
+          "x": { "type": "string" },
+          "y": { "type": "string" },
+          "note": { "type": "string" }
+        },
+        "required": ["chart", "x", "y"]
+      }
+    }
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Data Extraction Result",
+  "type": "object",
+  "required": ["entities", "summary"],
+  "properties": {
+    "entities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["text", "type"],
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "The extracted value as it appears in the source"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "person", "organization", "location", "date", "time",
+              "money", "percentage", "email", "phone", "url",
+              "code", "quantity"
+            ],
+            "description": "Semantic entity type"
+          },
+          "context": {
+            "type": "string",
+            "description": "Surrounding text giving meaning to the entity"
+          },
+          "normalized": {
+            "type": "string",
+            "description": "Normalized value (e.g. ISO 8601 for dates)"
+          }
+        }
+      }
+    },
+    "summary": {
+      "type": "string",
+      "description": "Brief description of what was extracted"
+    }
+  }
+}
