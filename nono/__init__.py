@@ -23,7 +23,7 @@ Configuration from external projects:
     set_prompts_dir("/path/to/prompts")
 """
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 # Export configuration utilities
 from .config import (
