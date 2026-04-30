@@ -21,6 +21,22 @@ try:
     
     from .genai_batch_processing import GeminiBatchService, OpenAIBatchService
 
+    from .mcp_client import MCPClient, MCPManager, MCPServerConfig, mcp_tools
+
+    from .structured_output import (
+        StructuredGenerator,
+        OutputParser,
+        JsonOutputParser,
+        PydanticOutputParser,
+        RegexOutputParser,
+        CsvOutputParser,
+        ParseError,
+        MaxRetriesExceededError,
+        parse_json,
+        parse_pydantic,
+        parse_csv,
+    )
+
     from .api_manager import (
         # Rate Limiting (backward compatible)
         APIRateLimiter,
@@ -74,6 +90,20 @@ except ImportError:
     )
     
     from genai_batch_processing import GeminiBatchService, OpenAIBatchService
+
+    from structured_output import (
+        StructuredGenerator,
+        OutputParser,
+        JsonOutputParser,
+        PydanticOutputParser,
+        RegexOutputParser,
+        CsvOutputParser,
+        ParseError,
+        MaxRetriesExceededError,
+        parse_json,
+        parse_pydantic,
+        parse_csv,
+    )
 
     from api_manager import (
         # Rate Limiting (backward compatible)
@@ -171,4 +201,21 @@ __all__ = [
     # Utility
     "install_library",
     "convert_json_schema",
+    # Structured Output
+    "StructuredGenerator",
+    "OutputParser",
+    "JsonOutputParser",
+    "PydanticOutputParser",
+    "RegexOutputParser",
+    "CsvOutputParser",
+    "ParseError",
+    "MaxRetriesExceededError",
+    "parse_json",
+    "parse_pydantic",
+    "parse_csv",
+    # MCP Client
+    "MCPClient",
+    "MCPManager",
+    "MCPServerConfig",
+    "mcp_tools",
 ]

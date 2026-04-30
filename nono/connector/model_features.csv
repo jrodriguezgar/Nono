@@ -30,5 +30,10 @@ foundry	xai/grok-3	131072
 vercel	anthropic/claude-opus-4.5	200000
 vercel	openai/gpt-5.2	128000
 vercel	google/gemini-3-flash	1048576
+anthropic	claude-opus-4	200000
+anthropic	claude-sonnet-4	200000
+anthropic	claude-haiku-4	200000
+anthropic	claude-3.5-sonnet	200000
+anthropic	claude-3.5-haiku	200000
 
 

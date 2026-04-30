@@ -48,6 +48,7 @@ Version: 2.0.0
 """
 
 import json
+import os
 import time
 from datetime import datetime
 from typing import Any, Callable
@@ -141,10 +142,15 @@ class GeminiBatchService:
         from google import genai
         from google.genai import types
         
+        import httpx
+
         self.genai = genai
         self.types = types
         self.api_key = api_key
-        self.client = genai.Client(api_key=api_key)
+        self.client = genai.Client(
+            api_key=api_key,
+            http_options={"timeout": httpx.Timeout(300, connect=30)},
+        )
     
     def create_inline_batch(
         self,
@@ -296,6 +302,9 @@ class GeminiBatchService:
         if keys and len(keys) != len(requests):
             raise ValueError(f"Number of keys ({len(keys)}) must match number of requests ({len(requests)})")
         
+        if ".." in os.path.normpath(output_path).split(os.sep):
+            raise ValueError("Path traversal detected in output_path")
+        
         with open(output_path, "w", encoding="utf-8") as f:
             for i, request in enumerate(requests):
                 key = keys[i] if keys else f"request-{i+1}"
@@ -335,7 +344,7 @@ class GeminiBatchService:
         self,
         job_name: str,
         poll_interval: float = 30.0,
-        timeout: float | None = None,
+        timeout: float | None = 86_400.0,
         callback: Callable[[Any, float], None] | None = None
     ) -> Any:
         """
@@ -382,7 +391,7 @@ class GeminiBatchService:
             if job.state in terminal_states:
                 return job
             
-            if timeout and elapsed >= timeout:
+            if timeout is not None and elapsed >= timeout:
                 raise TimeoutError(
                     f"Batch job '{job_name}' did not complete within {timeout} seconds. "
                     f"Current state: {job.state}"
@@ -453,6 +462,8 @@ class GeminiBatchService:
             
             if output_path:
                 # Save to file
+                if ".." in os.path.normpath(output_path).split(os.sep):
+                    raise ValueError("Path traversal detected in output_path")
                 with open(output_path, "wb") as f:
                     f.write(result_content)
                 return output_path
@@ -1002,7 +1013,7 @@ class OpenAIBatchService:
         self,
         batch_id: str,
         poll_interval: float = 30.0,
-        timeout: float | None = None,
+        timeout: float | None = 86_400.0,
         callback: Callable[[Any, float], None] | None = None
     ) -> Any:
         """
@@ -1051,7 +1062,7 @@ class OpenAIBatchService:
             if batch.status in terminal_states:
                 return batch
             
-            if timeout and elapsed >= timeout:
+            if timeout is not None and elapsed >= timeout:
                 raise TimeoutError(
                     f"Batch '{batch_id}' did not complete within {timeout} seconds. "
                     f"Current status: {batch.status}"

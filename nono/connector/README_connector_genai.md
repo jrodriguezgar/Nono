@@ -677,6 +677,61 @@ response = service.generate_completion(
 )
 ```
 
+### Structured Output with Pydantic Validation
+
+Use `StructuredGenerator` or `PydanticOutputParser` for type-safe structured output with automatic retry on parse failure:
+
+```python
+from pydantic import BaseModel
+from nono.connector import StructuredGenerator, PydanticOutputParser
+
+# Define output schema as a Pydantic model
+class Sentiment(BaseModel):
+    label: str
+    score: float
+    reasoning: str
+
+# Option 1: StructuredGenerator (standalone, any service)
+gen = StructuredGenerator(service, model=Sentiment, max_retries=2)
+result = gen.generate([
+    {"role": "user", "content": "Analyze: 'This product is amazing!'"}
+])
+print(result.label)  # "positive"
+print(result.score)  # 0.95
+
+# Option 2: Agent-level integration
+from nono.agent import Agent, Runner
+
+agent = Agent(
+    name="classifier",
+    instruction="Classify text sentiment.",
+    output_model=Sentiment,   # automatic Pydantic validation + retry
+    output_retries=3,         # max retries on parse failure
+)
+response = Runner(agent).run("Analyze: 'Terrible service.'")
+# response is the validated JSON string
+```
+
+#### Available Output Parsers
+
+| Parser | Import | Description |
+|--------|--------|-------------|
+| `PydanticOutputParser` | `nono.connector` | Pydantic model → JSON schema → validate |
+| `JsonOutputParser` | `nono.connector` | JSON parse + optional `jsonschema` validation |
+| `RegexOutputParser` | `nono.connector` | Extract text via regex capture groups |
+| `CsvOutputParser` | `nono.connector` | CSV with header row + column validation |
+
+#### Convenience Functions
+
+```python
+from nono.connector import parse_json, parse_pydantic, parse_csv
+
+# One-shot parsing (no service needed)
+data = parse_json('{"name": "Nono"}')
+sentiment = parse_pydantic('{"label": "positive", "score": 0.9}', Sentiment)
+rows = parse_csv("name,age\nAlice,30\nBob,25")
+```
+
 ### Using OpenAI SDK
 
 For advanced features like streaming, you can use the OpenAI SDK directly:

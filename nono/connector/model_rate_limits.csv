@@ -48,3 +48,8 @@ foundry	xai/grok-3	15	150	120000	-
 vercel	anthropic/claude-opus-4.5	60	-	100000	-
 vercel	openai/gpt-5.2	60	-	100000	-
 vercel	google/gemini-3-flash	60	-	1000000	-
+anthropic	claude-opus-4	50	-	40000	-
+anthropic	claude-sonnet-4	50	-	80000	-
+anthropic	claude-haiku-4	50	-	100000	-
+anthropic	claude-3.5-sonnet	50	-	80000	-
+anthropic	claude-3.5-haiku	50	-	100000	-

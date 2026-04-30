@@ -610,12 +610,12 @@ def main():
         example_openai_build_requests()
         return
     
-    print(f"\n✓ API key found (ending in ...{api_key[-4:]})")
+    print("\n\u2713 API key found")
     
     # Get OpenAI API key
     openai_api_key = os.getenv("OPENAI_API_KEY")
     if openai_api_key:
-        print(f"✓ OpenAI API key found (ending in ...{openai_api_key[-4:]})")
+        print("\u2713 OpenAI API key found")
     
     # Run examples (uncomment the ones you want to test)
     try:

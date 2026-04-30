@@ -530,6 +530,15 @@ class AIProviderPresets:
         )
     
     @staticmethod
+    def huggingface() -> RateLimitConfig:
+        """Hugging Face Inference API typical limits (free tier)."""
+        return RateLimitConfig(
+            rpm=60,
+            tpm=100000,
+            action=RateLimitExceededAction.WAIT
+        )
+    
+    @staticmethod
     def generic_conservative() -> RateLimitConfig:
         """Generic conservative settings for unknown APIs."""
         return RateLimitConfig(
@@ -1841,6 +1850,7 @@ def create_limiter_for_provider(provider: str) -> APIRateLimiter:
         "perplexity": AIProviderPresets.perplexity,
         "deepseek": AIProviderPresets.deepseek,
         "ollama": AIProviderPresets.ollama_local,
+        "huggingface": AIProviderPresets.huggingface,
         "grok": AIProviderPresets.generic_conservative,
     }
     

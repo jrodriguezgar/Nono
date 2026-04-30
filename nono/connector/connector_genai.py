@@ -2,20 +2,23 @@
 Connector Gen AI - Unified Generative AI Services Connector
 
 Provides a unified interface for connecting to multiple generative AI services
-including OpenAI, Google Gemini, Perplexity, DeepSeek, Grok (xAI), Groq, Cerebras,
-NVIDIA, Microsoft Foundry, Vercel AI SDK, and Ollama.
+including OpenAI, Google Gemini, Anthropic Claude, Perplexity, DeepSeek,
+Grok (xAI), Groq, Cerebras, NVIDIA, Hugging Face, Microsoft Foundry,
+Vercel AI SDK, and Ollama.
 Features built-in rate limiting (Token Bucket), SSL configuration management,
 and auto-installation of required dependencies.
 
 Supported Providers:
     - OpenAIService: GPT-4o, GPT-4o-mini, GPT-4-turbo, GPT-3.5-turbo
     - GeminiService: Gemini 1.5 Flash, Gemini 1.5 Pro, Gemini Pro
+    - AnthropicService: Claude Opus 4, Claude Sonnet 4, Claude Haiku 4
     - PerplexityService: Sonar, LLaMA-3 variants, Mixtral
     - DeepSeekService: DeepSeek Chat, DeepSeek Coder
     - GrokService: Grok-1 (xAI)
     - GroqService: LLaMA, Qwen, Kimi via Groq's ultra-fast LPU inference
     - CerebrasService: LLaMA models via Cerebras Wafer-Scale Engine
     - NvidiaService: Models via NVIDIA NIM inference platform
+    - HuggingFaceService: Models via Hugging Face Inference API
     - FoundryService: Models via Microsoft Foundry (GitHub Models)
     - VercelAIService: Provider-agnostic via Vercel AI SDK (OpenAI, Anthropic, Gemini)
     - OllamaService: Any locally hosted model
@@ -32,9 +35,11 @@ Date: 2026-02-02
 Version: 1.2.0
 """
 
+import os
 import sys
 import subprocess
 import ssl
+import logging
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -42,8 +47,10 @@ from enum import Enum
 import csv
 import json
 import threading
-from typing import Optional, Any, Callable
-from datetime import datetime, timedelta
+from typing import Optional, Any, Callable, Iterator
+from datetime import datetime
+
+logger = logging.getLogger("Nono.Connector")
 
 # --- SSL Configuration ---
 
@@ -60,7 +67,12 @@ class SSLVerificationMode(Enum):
     CUSTOM = "custom"
 
 
-def configure_ssl_verification(mode: SSLVerificationMode = SSLVerificationMode.INSECURE, 
+# Module-level SSL verify setting used by all HTTP requests.
+# Updated by configure_ssl_verification(); default is True (system certs).
+_SSL_VERIFY: bool | str = True
+
+
+def configure_ssl_verification(mode: SSLVerificationMode = SSLVerificationMode.CERTIFI, 
                                custom_cert_path: str | None = None) -> None:
     """
     Configures SSL certificate verification for the application.
@@ -89,12 +101,11 @@ def configure_ssl_verification(mode: SSLVerificationMode = SSLVerificationMode.I
     
     Cost: O(1)
     """
-    import os
-    import warnings
-    
     if mode == SSLVerificationMode.INSECURE:
         # Option 1: Disable SSL verification (INSECURE - use only for development/testing)
-        print("⚠️  SSL verification DISABLED - This is insecure and should only be used for development!")
+        global _SSL_VERIFY
+        logger.warning("SSL verification DISABLED - This is insecure and should only be used for development!")
+        _SSL_VERIFY = False
         
         # Disable SSL verification globally
         ssl._create_default_https_context = ssl._create_unverified_context
@@ -113,7 +124,8 @@ def configure_ssl_verification(mode: SSLVerificationMode = SSLVerificationMode.I
         try:
             import certifi
             cert_path = certifi.where()
-            print(f"✓ SSL verification enabled using certifi: {cert_path}")
+            logger.info("SSL verification enabled using certifi: %s", cert_path)
+            _SSL_VERIFY = cert_path
             
             # Set environment variables to use certifi certificates
             os.environ['REQUESTS_CA_BUNDLE'] = cert_path
@@ -121,18 +133,20 @@ def configure_ssl_verification(mode: SSLVerificationMode = SSLVerificationMode.I
             os.environ['CURL_CA_BUNDLE'] = cert_path
             
         except ImportError:
-            print("⚠️  certifi package not found. Installing...")
+            logger.warning("certifi package not found. Installing...")
             try:
-                subprocess.check_call([sys.executable, "-m", "pip", "install", "certifi"])
+                subprocess.check_call([sys.executable, "-m", "pip", "install", "certifi"], timeout=120)
                 import certifi
                 cert_path = certifi.where()
                 os.environ['REQUESTS_CA_BUNDLE'] = cert_path
                 os.environ['SSL_CERT_FILE'] = cert_path
                 os.environ['CURL_CA_BUNDLE'] = cert_path
-                print(f"✓ certifi installed and configured: {cert_path}")
+                _SSL_VERIFY = cert_path
+                logger.info("certifi installed and configured: %s", cert_path)
             except Exception as e:
-                print(f"❌ Error installing certifi: {e}")
-                print("⚠️  Falling back to system certificates")
+                logger.error("Error installing certifi: %s", e)
+                logger.warning("Falling back to system certificates")
+                _SSL_VERIFY = True
                 
     elif mode == SSLVerificationMode.CUSTOM:
         # Option 3: Use custom certificate file
@@ -142,7 +156,8 @@ def configure_ssl_verification(mode: SSLVerificationMode = SSLVerificationMode.I
         if not os.path.exists(custom_cert_path):
             raise FileNotFoundError(f"Certificate file not found: {custom_cert_path}")
         
-        print(f"✓ SSL verification enabled using custom certificate: {custom_cert_path}")
+        logger.info("SSL verification enabled using custom certificate: %s", custom_cert_path)
+        _SSL_VERIFY = custom_cert_path
         
         # Set environment variables to use custom certificate
         os.environ['REQUESTS_CA_BUNDLE'] = custom_cert_path
@@ -153,17 +168,28 @@ def configure_ssl_verification(mode: SSLVerificationMode = SSLVerificationMode.I
         raise ValueError(f"Invalid SSL verification mode: {mode}")
 
 
-# Configure SSL by default (INSECURE mode for development)
+# Configure SSL by default (CERTIFI for production safety)
 # To change the mode, call configure_ssl_verification() with the desired mode before using any AI services
-configure_ssl_verification(SSLVerificationMode.INSECURE)
+configure_ssl_verification(SSLVerificationMode.CERTIFI)
 
 
 # --- Dependency Management Utility ---
+
+# Allowlist of pip package names that install_library may install.
+_ALLOWED_PIP_PACKAGES: frozenset[str] = frozenset({
+    "urllib3", "requests", "certifi", "keyring",
+    "google-genai", "openai", "cerebras-cloud-sdk", "anthropic",
+    "azure-ai-inference", "ai-sdk-python", "jsonschema",
+    "httpx", "pyyaml",
+})
+
 
 def install_library(library_name: str, import_name: str | None = None, package_name: str | None = None) -> bool:
     """
     Checks if a library is installed and, if not, attempts to install it via pip.
     
+    Only packages in ``_ALLOWED_PIP_PACKAGES`` are permitted for install.
+
     Args:
         library_name: The name to use for import check (e.g., 'google.genai')
         import_name: Deprecated, use library_name instead
@@ -176,17 +202,20 @@ def install_library(library_name: str, import_name: str | None = None, package_n
         return True
     except ImportError:
         pip_name = package_name if package_name else library_name
-        print(f"Library '{library_name}' not found. Attempting to install '{pip_name}'...")
+        if pip_name not in _ALLOWED_PIP_PACKAGES:
+            logger.error("Package '%s' is not in the allowed install list.", pip_name)
+            return False
+        logger.info("Library '%s' not found. Attempting to install '%s'...", library_name, pip_name)
         try:
-            subprocess.check_call([sys.executable, "-m", "pip", "install", pip_name])
-            print(f"Library '{pip_name}' installed successfully.")
+            subprocess.check_call([sys.executable, "-m", "pip", "install", pip_name], timeout=120)
+            logger.info("Library '%s' installed successfully.", pip_name)
             return True
         except subprocess.CalledProcessError:
-            print(f"Error: Failed to install '{pip_name}'.")
+            logger.error("Failed to install '%s'.", pip_name)
             return False
 
 # Ensure required libraries are installed before importing
-for lib in ["json", "urllib3", "requests"]:
+for lib in ["urllib3", "requests"]:
     install_library(lib)
 
 # --- Initial Setup ---
@@ -194,21 +223,11 @@ import requests
 import urllib3
 if install_library("requests"):
     HTTP_SESSION = requests.Session()
-    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 else:
     raise ImportError("The 'requests' library is required and could not be installed.")
 
-# Disable SSL verification (for development only)
-import ssl
-import urllib3
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-ssl._create_default_https_context = ssl._create_unverified_context # Create SSL context without verification
-
-# Configure SSL verification
-import os
-import certifi
-os.environ['REQUESTS_CA_BUNDLE'] = certifi.where()
-os.environ['SSL_CERT_FILE'] = certifi.where()
+import atexit
+atexit.register(HTTP_SESSION.close)
 
 # --- API Manager ---
 # Import the professional API management module
@@ -259,6 +278,7 @@ except ImportError:
 
 # Cache for model features loaded from CSV
 _MODEL_FEATURES_CACHE: dict[str, int] | None = None
+_CSV_CACHE_LOCK = threading.Lock()
 
 
 def _load_model_features() -> dict[str, int]:
@@ -272,32 +292,36 @@ def _load_model_features() -> dict[str, int]:
     if _MODEL_FEATURES_CACHE is not None:
         return _MODEL_FEATURES_CACHE
     
-    csv_path = os.path.join(os.path.dirname(__file__), "model_features.csv")
-    features: dict[str, int] = {}
+    with _CSV_CACHE_LOCK:
+        if _MODEL_FEATURES_CACHE is not None:
+            return _MODEL_FEATURES_CACHE
     
-    if not os.path.exists(csv_path):
+        csv_path = os.path.join(os.path.dirname(__file__), "model_features.csv")
+        features: dict[str, int] = {}
+    
+        if not os.path.exists(csv_path):
+            _MODEL_FEATURES_CACHE = features
+            return features
+    
+        with open(csv_path, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f, delimiter='\t')
+            for row in reader:
+                provider = row.get('provider', '').strip().lower()
+                model = row.get('model', '').strip()
+                prompt_size_str = row.get('prompt_size', '').strip()
+            
+                if model and prompt_size_str:
+                    try:
+                        prompt_size = int(prompt_size_str)
+                        # Store both with and without provider prefix
+                        if provider:
+                            features[f"{provider}/{model}"] = prompt_size
+                        features[model] = prompt_size
+                    except ValueError:
+                        pass
+    
         _MODEL_FEATURES_CACHE = features
         return features
-    
-    with open(csv_path, 'r', encoding='utf-8') as f:
-        reader = csv.DictReader(f, delimiter='\t')
-        for row in reader:
-            provider = row.get('provider', '').strip().lower()
-            model = row.get('model', '').strip()
-            prompt_size_str = row.get('prompt_size', '').strip()
-            
-            if model and prompt_size_str:
-                try:
-                    prompt_size = int(prompt_size_str)
-                    # Store both with and without provider prefix
-                    if provider:
-                        features[f"{provider}/{model}"] = prompt_size
-                    features[model] = prompt_size
-                except ValueError:
-                    pass
-    
-    _MODEL_FEATURES_CACHE = features
-    return features
 
 
 def get_prompt_size(provider: str, model: str, default: int = 500_000) -> int:
@@ -381,33 +405,37 @@ def _load_rate_limits() -> dict[str, dict[str, int | None]]:
     if _RATE_LIMITS_CACHE is not None:
         return _RATE_LIMITS_CACHE
     
-    csv_path = os.path.join(os.path.dirname(__file__), "model_rate_limits.csv")
-    limits: dict[str, dict[str, int | None]] = {}
+    with _CSV_CACHE_LOCK:
+        if _RATE_LIMITS_CACHE is not None:
+            return _RATE_LIMITS_CACHE
     
-    if not os.path.exists(csv_path):
+        csv_path = os.path.join(os.path.dirname(__file__), "model_rate_limits.csv")
+        limits: dict[str, dict[str, int | None]] = {}
+    
+        if not os.path.exists(csv_path):
+            _RATE_LIMITS_CACHE = limits
+            return limits
+    
+        with open(csv_path, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f, delimiter='\t')
+            for row in reader:
+                provider = row.get('provider', '').strip().lower()
+                model = row.get('model', '').strip()
+            
+                if model:
+                    limit_data = {
+                        'rpm': _parse_limit(row.get('rpm')),
+                        'rpd': _parse_limit(row.get('rpd')),
+                        'tpm': _parse_limit(row.get('tpm')),
+                        'tpd': _parse_limit(row.get('tpd'))
+                    }
+                    # Store with provider prefix
+                    if provider:
+                        limits[f"{provider}/{model}"] = limit_data
+                    limits[model] = limit_data
+    
         _RATE_LIMITS_CACHE = limits
         return limits
-    
-    with open(csv_path, 'r', encoding='utf-8') as f:
-        reader = csv.DictReader(f, delimiter='\t')
-        for row in reader:
-            provider = row.get('provider', '').strip().lower()
-            model = row.get('model', '').strip()
-            
-            if model:
-                limit_data = {
-                    'rpm': _parse_limit(row.get('rpm')),
-                    'rpd': _parse_limit(row.get('rpd')),
-                    'tpm': _parse_limit(row.get('tpm')),
-                    'tpd': _parse_limit(row.get('tpd'))
-                }
-                # Store with provider prefix
-                if provider:
-                    limits[f"{provider}/{model}"] = limit_data
-                limits[model] = limit_data
-    
-    _RATE_LIMITS_CACHE = limits
-    return limits
 
 
 def get_rate_limit_config(provider: str, model: str) -> RateLimitConfig | None:
@@ -470,6 +498,38 @@ def convert_json_schema(input_schema: dict, output_title: str = "perplexity") ->
         output_schema["properties"][property_name] = updated_property_details
 
     return output_schema
+
+# --- Stream Chunk ---
+
+@dataclass(frozen=True)
+class StreamChunk:
+    """A typed chunk from a streaming LLM response.
+
+    Connectors yield these from ``generate_stream()`` to provide both
+    text deltas and incremental tool-call argument fragments.
+
+    Attributes:
+        type: ``"text"`` for content deltas, ``"tool_call"`` for
+            function-call argument fragments, ``"finish"`` for the
+            terminal signal.
+        content: Text delta (``type="text"``) or argument JSON
+            fragment (``type="tool_call"``).
+        tool_index: Zero-based index when multiple tool calls arrive
+            in parallel (``type="tool_call"`` only).
+        tool_call_id: Provider-assigned call ID
+            (``type="tool_call"``, first chunk per index only).
+        tool_name: Function name
+            (``type="tool_call"``, first chunk per index only).
+        finish_reason: ``"stop"`` for text, ``"tool_calls"`` for tool
+            invocations (``type="finish"`` only).
+    """
+    type: str
+    content: str = ""
+    tool_index: int = 0
+    tool_call_id: str = ""
+    tool_name: str = ""
+    finish_reason: str = ""
+
 
 # --- Response Format Enum ---
 
@@ -917,7 +977,7 @@ class GenerativeAIService(ABC):
                                  f"adhering to the following schema:\n```json\n{schema_str}\n```\n"
                                  f"Ensure the response is valid JSON.")
                 except TypeError as e:
-                    print(f"Warning: Could not serialize JSON schema. Error: {e}")
+                    logger.warning("Could not serialize JSON schema: %s", e)
                     instruction = "\n\nPlease provide the output in JSON format. Ensure the response is valid JSON."
             else:
                 instruction = "\n\nPlease provide the output in JSON format. Ensure the response is valid JSON."
@@ -964,7 +1024,126 @@ class GenerativeAIService(ABC):
                           **kwargs) -> str:
         pass
 
+    def generate_completion_stream(
+        self,
+        messages: list[dict[str, str]],
+        temperature: float | str = 0.7,
+        max_tokens: int | None = None,
+        top_p: float | None = None,
+        frequency_penalty: float | None = None,
+        presence_penalty: float | None = None,
+        stop: list[str] | None = None,
+        response_format: ResponseFormat = ResponseFormat.JSON,
+        json_schema: dict | None = None,
+        use_case: str | None = None,
+        **kwargs,
+    ) -> Iterator[str]:
+        """Stream completion tokens incrementally.
+
+        Yields text chunks as they are received from the provider.
+        Subclasses should override this with a native streaming
+        implementation.  The default falls back to
+        ``generate_completion`` and yields the full response as a
+        single chunk.
+
+        Args:
+            messages: Chat messages in OpenAI format.
+            temperature: Sampling temperature.
+            max_tokens: Maximum output tokens.
+            top_p: Nucleus sampling.
+            frequency_penalty: Frequency penalty.
+            presence_penalty: Presence penalty.
+            stop: Stop sequences.
+            response_format: Response format hint.
+            json_schema: JSON schema for structured output.
+            use_case: Optional use-case label.
+            **kwargs: Provider-specific extra arguments.
+
+        Yields:
+            Text chunks (strings) as they arrive.
+        """
+        full = self.generate_completion(
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            top_p=top_p,
+            frequency_penalty=frequency_penalty,
+            presence_penalty=presence_penalty,
+            stop=stop,
+            response_format=response_format,
+            json_schema=json_schema,
+            use_case=use_case,
+            **kwargs,
+        )
+        yield full
+
+    def generate_stream(
+        self,
+        messages: list[dict[str, str]],
+        temperature: float | str = 0.7,
+        max_tokens: int | None = None,
+        top_p: float | None = None,
+        frequency_penalty: float | None = None,
+        presence_penalty: float | None = None,
+        stop: list[str] | None = None,
+        response_format: ResponseFormat = ResponseFormat.JSON,
+        json_schema: dict | None = None,
+        use_case: str | None = None,
+        **kwargs,
+    ) -> Iterator[StreamChunk]:
+        """Stream structured chunks including text and tool-call deltas.
+
+        Yields ``StreamChunk`` objects that distinguish content deltas
+        from tool-call argument fragments, enabling real-time display of
+        both text generation and incremental function-call arguments.
+
+        Subclasses should override this with a native implementation
+        that parses provider-specific streaming data.  The default
+        falls back to ``generate_completion`` and yields the full
+        response as a single ``"text"`` chunk followed by ``"finish"``.
+
+        Args:
+            messages: Chat messages in OpenAI format.
+            temperature: Sampling temperature.
+            max_tokens: Maximum output tokens.
+            top_p: Nucleus sampling.
+            frequency_penalty: Frequency penalty.
+            presence_penalty: Presence penalty.
+            stop: Stop sequences.
+            response_format: Response format hint.
+            json_schema: JSON schema for structured output.
+            use_case: Optional use-case label.
+            **kwargs: Provider-specific extra arguments (``tools``, etc.).
+
+        Yields:
+            ``StreamChunk`` objects as they arrive.
+        """
+        full = self.generate_completion(
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            top_p=top_p,
+            frequency_penalty=frequency_penalty,
+            presence_penalty=presence_penalty,
+            stop=stop,
+            response_format=response_format,
+            json_schema=json_schema,
+            use_case=use_case,
+            **kwargs,
+        )
+        if full:
+            yield StreamChunk(type="text", content=full)
+        yield StreamChunk(type="finish", finish_reason="stop")
+
 # --- OpenAI Compatible Services ---
+
+# Allowed extra kwargs forwarded to OpenAI-compatible API calls
+_ALLOWED_EXTRA_KEYS: frozenset[str] = frozenset({
+    "seed", "tools", "tool_choice", "logprobs", "top_logprobs",
+    "n", "stream", "stream_options", "user", "logit_bias",
+    "parallel_tool_calls", "service_tier", "store",
+})
+
 
 class OpenAICompatibleService(GenerativeAIService):
     """Base class for OpenAI-compatible API services."""
@@ -1025,9 +1204,10 @@ class OpenAICompatibleService(GenerativeAIService):
         if presence_penalty is not None: payload["presence_penalty"] = presence_penalty
         if stop is not None: payload["stop"] = stop
         
-        # Include any extra supported kwargs
+        # Include only known extra OpenAI-compatible kwargs
         for key in kwargs:
-             payload[key] = kwargs[key]
+            if key in _ALLOWED_EXTRA_KEYS:
+                payload[key] = kwargs[key]
 
         if response_format == ResponseFormat.JSON:
             payload["response_format"] = {"type": "json_object"}
@@ -1042,15 +1222,215 @@ class OpenAICompatibleService(GenerativeAIService):
             # Usually they follow OpenAI, so 'system' is correct.
 
         try:
-            response = HTTP_SESSION.post(endpoint, headers=self.headers, json=payload, timeout=90, verify=False)
+            response = HTTP_SESSION.post(endpoint, headers=self.headers, json=payload, timeout=90, verify=_SSL_VERIFY)
             response.raise_for_status()
             data = response.json()
             return data['choices'][0]['message']['content'].strip()
         except requests.exceptions.RequestException as e:
-            print(f"Error connecting to {self._base_url}: {e}")
+            logger.error("Error connecting to %s: %s", self._base_url, e)
             raise
         except (KeyError, IndexError) as e:
-            print(f"Unexpected API response format: {e}")
+            logger.error("Unexpected API response format: %s", e)
+            raise
+
+    def generate_completion_stream(
+        self,
+        messages: list[dict[str, str]],
+        temperature: float | str = 0.7,
+        max_tokens: int | None = None,
+        top_p: float | None = None,
+        frequency_penalty: float | None = None,
+        presence_penalty: float | None = None,
+        stop: list[str] | None = None,
+        response_format: ResponseFormat = ResponseFormat.JSON,
+        json_schema: dict | None = None,
+        use_case: str | None = None,
+        **kwargs,
+    ) -> Iterator[str]:
+        """Stream tokens from any OpenAI-compatible endpoint.
+
+        Uses ``stream=True`` with the standard SSE chunked-transfer
+        protocol supported by OpenAI, Groq, DeepSeek, xAI, Perplexity,
+        NVIDIA NIM, GitHub Models and OpenRouter.
+
+        Yields:
+            Text delta strings as they arrive.
+        """
+        temperature = self._resolve_temperature(temperature)
+        formatted_messages = self._format_messages_for_response(
+            messages, response_format, json_schema,
+        )
+        if not any(msg.get("role") == "system" for msg in formatted_messages):
+            formatted_messages.insert(
+                0, {"role": "system", "content": "You are a helpful assistant."},
+            )
+        self._validate_messages_length(formatted_messages)
+        self.rate_limiter.wait_for_permit()
+
+        endpoint = f"{self._base_url}/chat/completions"
+        payload: dict[str, Any] = {
+            "model": self.model_name,
+            "messages": formatted_messages,
+            "temperature": temperature,
+            "stream": True,
+        }
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
+        if top_p is not None:
+            payload["top_p"] = top_p
+        if frequency_penalty is not None:
+            payload["frequency_penalty"] = frequency_penalty
+        if presence_penalty is not None:
+            payload["presence_penalty"] = presence_penalty
+        if stop is not None:
+            payload["stop"] = stop
+        for key in kwargs:
+            if key in _ALLOWED_EXTRA_KEYS and key != "stream":
+                payload[key] = kwargs[key]
+        if response_format == ResponseFormat.JSON:
+            payload["response_format"] = {"type": "json_object"}
+        for msg in payload["messages"]:
+            if msg.get("role") == "model":
+                msg["role"] = "assistant"
+
+        try:
+            with HTTP_SESSION.post(
+                endpoint,
+                headers=self.headers,
+                json=payload,
+                timeout=90,
+                verify=_SSL_VERIFY,
+                stream=True,
+            ) as resp:
+                resp.raise_for_status()
+                for raw_line in resp.iter_lines(decode_unicode=True):
+                    if not raw_line or not raw_line.startswith("data: "):
+                        continue
+                    data_str = raw_line[len("data: "):]
+                    if data_str.strip() == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(data_str)
+                        delta = (
+                            chunk.get("choices", [{}])[0]
+                            .get("delta", {})
+                            .get("content")
+                        )
+                        if delta:
+                            yield delta
+                    except (json.JSONDecodeError, IndexError, KeyError):
+                        continue
+        except requests.exceptions.RequestException as e:
+            logger.error("Streaming error from %s: %s", self._base_url, e)
+            raise
+
+    def generate_stream(
+        self,
+        messages: list[dict[str, str]],
+        temperature: float | str = 0.7,
+        max_tokens: int | None = None,
+        top_p: float | None = None,
+        frequency_penalty: float | None = None,
+        presence_penalty: float | None = None,
+        stop: list[str] | None = None,
+        response_format: ResponseFormat = ResponseFormat.JSON,
+        json_schema: dict | None = None,
+        use_case: str | None = None,
+        **kwargs,
+    ) -> Iterator[StreamChunk]:
+        """Stream structured chunks from any OpenAI-compatible endpoint.
+
+        Parses both ``delta.content`` (text) and ``delta.tool_calls``
+        (incremental function-call arguments) from SSE chunks.
+
+        Yields:
+            ``StreamChunk`` objects for text, tool-call, and finish signals.
+        """
+        temperature = self._resolve_temperature(temperature)
+        formatted_messages = self._format_messages_for_response(
+            messages, response_format, json_schema,
+        )
+        if not any(msg.get("role") == "system" for msg in formatted_messages):
+            formatted_messages.insert(
+                0, {"role": "system", "content": "You are a helpful assistant."},
+            )
+        self._validate_messages_length(formatted_messages)
+        self.rate_limiter.wait_for_permit()
+
+        endpoint = f"{self._base_url}/chat/completions"
+        payload: dict[str, Any] = {
+            "model": self.model_name,
+            "messages": formatted_messages,
+            "temperature": temperature,
+            "stream": True,
+        }
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
+        if top_p is not None:
+            payload["top_p"] = top_p
+        if frequency_penalty is not None:
+            payload["frequency_penalty"] = frequency_penalty
+        if presence_penalty is not None:
+            payload["presence_penalty"] = presence_penalty
+        if stop is not None:
+            payload["stop"] = stop
+        for key in kwargs:
+            if key in _ALLOWED_EXTRA_KEYS and key != "stream":
+                payload[key] = kwargs[key]
+        if response_format == ResponseFormat.JSON:
+            payload["response_format"] = {"type": "json_object"}
+        for msg in payload["messages"]:
+            if msg.get("role") == "model":
+                msg["role"] = "assistant"
+
+        try:
+            with HTTP_SESSION.post(
+                endpoint,
+                headers=self.headers,
+                json=payload,
+                timeout=90,
+                verify=_SSL_VERIFY,
+                stream=True,
+            ) as resp:
+                resp.raise_for_status()
+                for raw_line in resp.iter_lines(decode_unicode=True):
+                    if not raw_line or not raw_line.startswith("data: "):
+                        continue
+                    data_str = raw_line[len("data: "):]
+                    if data_str.strip() == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(data_str)
+                        choice = chunk.get("choices", [{}])[0]
+                        delta = choice.get("delta", {})
+                        finish_reason = choice.get("finish_reason")
+
+                        # Text content delta
+                        content = delta.get("content")
+                        if content:
+                            yield StreamChunk(type="text", content=content)
+
+                        # Tool-call argument deltas
+                        for tc in delta.get("tool_calls", []):
+                            func = tc.get("function", {})
+                            yield StreamChunk(
+                                type="tool_call",
+                                tool_index=tc.get("index", 0),
+                                tool_call_id=tc.get("id", ""),
+                                tool_name=func.get("name", ""),
+                                content=func.get("arguments", ""),
+                            )
+
+                        # Finish signal
+                        if finish_reason:
+                            yield StreamChunk(
+                                type="finish",
+                                finish_reason=finish_reason,
+                            )
+                    except (json.JSONDecodeError, IndexError, KeyError):
+                        continue
+        except requests.exceptions.RequestException as e:
+            logger.error("Streaming error from %s: %s", self._base_url, e)
             raise
 
 # --- Concrete Implementations ---
@@ -1127,8 +1507,13 @@ class PerplexityService(OpenAICompatibleService):
         
         # Perplexity specific parameters (pass via kwargs for advanced use)
         # return_citations, search_domain_filter, return_images, return_related_questions
+        _PERPLEXITY_ALLOWED_KWARGS = {
+            "return_citations", "search_domain_filter", "return_images",
+            "return_related_questions", "search_recency_filter",
+        }
         for key in kwargs:
-             payload[key] = kwargs[key]
+            if key in _PERPLEXITY_ALLOWED_KWARGS:
+                payload[key] = kwargs[key]
 
         if response_format == ResponseFormat.JSON:
             if json_schema:
@@ -1141,7 +1526,7 @@ class PerplexityService(OpenAICompatibleService):
                 payload["response_format"] = {"type": "json_object"}
 
         try:
-            response = HTTP_SESSION.post(endpoint, headers=self.headers, json=payload, timeout=90, verify=False)
+            response = HTTP_SESSION.post(endpoint, headers=self.headers, json=payload, timeout=90, verify=_SSL_VERIFY)
             response.raise_for_status()
             data = response.json()
             content = data['choices'][0]['message']['content'].strip()
@@ -1149,10 +1534,10 @@ class PerplexityService(OpenAICompatibleService):
                 return content[len("```json"): -len("```")].strip()
             return content
         except requests.exceptions.RequestException as e:
-            print(f"Error connecting to {endpoint}: {e}")
+            logger.error("Error connecting to %s: %s", endpoint, e)
             raise
         except (KeyError, IndexError) as e:
-            print(f"Unexpected API response format from Perplexity: {e}")
+            logger.error("Unexpected API response format from Perplexity: %s", e)
             raise
 
 class DeepSeekService(OpenAICompatibleService):
@@ -1293,6 +1678,63 @@ class NvidiaService(OpenAICompatibleService):
         )
 
 
+class HuggingFaceService(OpenAICompatibleService):
+    """
+    Hugging Face Inference API service - Access to thousands of models via OpenAI-compatible API.
+    
+    Hugging Face provides serverless and dedicated inference for a vast catalog of
+    open-source models through their Inference API, which is OpenAI-compatible.
+    
+    Supported models (as of 2026):
+        - meta-llama/Llama-3.3-70B-Instruct
+        - mistralai/Mistral-Small-24B-Instruct-2501
+        - Qwen/Qwen2.5-72B-Instruct
+        - deepseek-ai/DeepSeek-R1
+        - HuggingFaceH4/zephyr-7b-beta
+        - Any model with Inference API enabled on Hugging Face Hub
+    
+    API Documentation: https://huggingface.co/docs/api-inference
+    
+    Usage:
+        >>> from connector_genai import HuggingFaceService
+        >>> client = HuggingFaceService(
+        ...     model_name="meta-llama/Llama-3.3-70B-Instruct",
+        ...     api_key="hf_..."
+        ... )
+        >>> response = client.generate_completion(
+        ...     messages=[{"role": "user", "content": "Hello!"}]
+        ... )
+    """
+    _PROVIDER_NAME = "huggingface"
+
+    def __init__(self, model_name: str,
+                 api_key: str | None = None,
+                 rate_limit_config: Optional[RateLimitConfig] = None):
+        """
+        Initialize Hugging Face Inference API service.
+        
+        Args:
+            model_name: Model to use (e.g., 'meta-llama/Llama-3.3-70B-Instruct')
+            api_key: Hugging Face API token (get from huggingface.co/settings/tokens)
+            rate_limit_config: Rate limit configuration (loaded from CSV if None)
+        """
+        # Resolve API key if not provided
+        if api_key is None:
+            api_key = resolve_api_key_for_provider(self._PROVIDER_NAME)
+        
+        # Load rate limit from CSV if not provided
+        if rate_limit_config is None:
+            rate_limit_config = get_rate_limit_config(self._PROVIDER_NAME, model_name)
+        
+        super().__init__(
+            model_name,
+            api_key,
+            "https://api-inference.huggingface.co/v1",
+            get_prompt_size(self._PROVIDER_NAME, model_name),
+            rate_limit_config
+        )
+
+
 class CerebrasService(GenerativeAIService):
     """
     Cerebras AI service - Ultra-fast inference using Cerebras Wafer-Scale Engine.
@@ -1351,20 +1793,24 @@ class CerebrasService(GenerativeAIService):
 
         # Lazy: SDK client created on first generate_completion call
         self.client = None
+        self._client_lock = threading.Lock()
 
     def _ensure_client(self) -> None:
         """Lazy initialization of the Cerebras SDK client."""
         if self.client is not None:
             return
-        
-        if not install_library("cerebras.cloud.sdk", package_name="cerebras-cloud-sdk"):
-            raise ImportError(
-                "The 'cerebras-cloud-sdk' library is required for CerebrasService "
-                "and could not be installed."
-            )
+        with self._client_lock:
+            if self.client is not None:
+                return
+            
+            if not install_library("cerebras.cloud.sdk", package_name="cerebras-cloud-sdk"):
+                raise ImportError(
+                    "The 'cerebras-cloud-sdk' library is required for CerebrasService "
+                    "and could not be installed."
+                )
 
-        from cerebras.cloud.sdk import Cerebras
-        self.client = Cerebras(api_key=self._api_key)
+            from cerebras.cloud.sdk import Cerebras
+            self.client = Cerebras(api_key=self._api_key)
 
     def generate_completion(self, messages: list[dict[str, str]], 
                           temperature: float | str = 0.7,
@@ -1438,14 +1884,157 @@ class CerebrasService(GenerativeAIService):
                 sdk_params["response_format"] = {"type": "json_object"}
 
         try:
-            completion = self.client.chat.completions.create(**sdk_params)
+            completion = self.client.chat.completions.create(
+                timeout=90, **sdk_params,
+            )
             content = completion.choices[0].message.content or ""
             content = content.strip()
             if content.startswith("```json") and content.endswith("```"):
                 return content[len("```json"): -len("```")].strip()
             return content
         except Exception as e:
-            print(f"Error with Cerebras API: {e}")
+            logger.error("Error with Cerebras API: %s", e)
+            raise
+
+    def generate_completion_stream(
+        self,
+        messages: list[dict[str, str]],
+        temperature: float | str = 0.7,
+        max_tokens: int | None = None,
+        top_p: float | None = None,
+        frequency_penalty: float | None = None,
+        presence_penalty: float | None = None,
+        stop: list[str] | None = None,
+        response_format: ResponseFormat = ResponseFormat.JSON,
+        json_schema: dict | None = None,
+        use_case: str | None = None,
+        **kwargs,
+    ) -> Iterator[str]:
+        """Stream tokens from Cerebras via native SDK streaming.
+
+        Yields:
+            Text delta strings as they arrive.
+        """
+        self._ensure_client()
+        temperature = self._resolve_temperature(temperature)
+        processed_messages = self._format_messages_for_response(
+            messages, response_format, json_schema,
+        )
+        if not any(msg.get("role") == "system" for msg in processed_messages):
+            processed_messages.insert(
+                0, {"role": "system", "content": "You are a helpful assistant."},
+            )
+        self._validate_messages_length(processed_messages)
+        self.rate_limiter.wait_for_permit()
+
+        sdk_params: dict[str, Any] = {
+            "model": self.model_name,
+            "messages": processed_messages,
+            "temperature": temperature,
+            "stream": True,
+        }
+        if max_tokens is not None:
+            sdk_params["max_completion_tokens"] = max_tokens
+        if top_p is not None:
+            sdk_params["top_p"] = top_p
+        if stop is not None:
+            sdk_params["stop"] = stop
+
+        try:
+            stream = self.client.chat.completions.create(
+                timeout=90, **sdk_params,
+            )
+            for chunk in stream:
+                if chunk.choices and chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
+        except Exception as e:
+            logger.error("Cerebras streaming error: %s", e)
+            raise
+
+    def generate_stream(
+        self,
+        messages: list[dict[str, str]],
+        temperature: float | str = 0.7,
+        max_tokens: int | None = None,
+        top_p: float | None = None,
+        frequency_penalty: float | None = None,
+        presence_penalty: float | None = None,
+        stop: list[str] | None = None,
+        response_format: ResponseFormat = ResponseFormat.JSON,
+        json_schema: dict | None = None,
+        use_case: str | None = None,
+        **kwargs,
+    ) -> Iterator[StreamChunk]:
+        """Stream structured chunks from Cerebras via native SDK.
+
+        Parses both text content and tool-call deltas from SDK chunks.
+
+        Yields:
+            ``StreamChunk`` objects for text, tool-call, and finish signals.
+        """
+        self._ensure_client()
+        temperature = self._resolve_temperature(temperature)
+        processed_messages = self._format_messages_for_response(
+            messages, response_format, json_schema,
+        )
+        if not any(msg.get("role") == "system" for msg in processed_messages):
+            processed_messages.insert(
+                0, {"role": "system", "content": "You are a helpful assistant."},
+            )
+        self._validate_messages_length(processed_messages)
+        self.rate_limiter.wait_for_permit()
+
+        sdk_params: dict[str, Any] = {
+            "model": self.model_name,
+            "messages": processed_messages,
+            "temperature": temperature,
+            "stream": True,
+        }
+        if max_tokens is not None:
+            sdk_params["max_completion_tokens"] = max_tokens
+        if top_p is not None:
+            sdk_params["top_p"] = top_p
+        if stop is not None:
+            sdk_params["stop"] = stop
+        # Forward tools if provided
+        tools = kwargs.get("tools")
+        if tools:
+            sdk_params["tools"] = tools
+
+        try:
+            stream = self.client.chat.completions.create(
+                timeout=90, **sdk_params,
+            )
+            for chunk in stream:
+                if not chunk.choices:
+                    continue
+                choice = chunk.choices[0]
+                delta = choice.delta
+                finish_reason = choice.finish_reason
+
+                # Text content
+                if delta.content:
+                    yield StreamChunk(type="text", content=delta.content)
+
+                # Tool-call argument deltas
+                if hasattr(delta, "tool_calls") and delta.tool_calls:
+                    for tc in delta.tool_calls:
+                        func = tc.function if hasattr(tc, "function") else None
+                        yield StreamChunk(
+                            type="tool_call",
+                            tool_index=getattr(tc, "index", 0) or 0,
+                            tool_call_id=getattr(tc, "id", "") or "",
+                            tool_name=getattr(func, "name", "") or "" if func else "",
+                            content=getattr(func, "arguments", "") or "" if func else "",
+                        )
+
+                # Finish signal
+                if finish_reason:
+                    yield StreamChunk(
+                        type="finish", finish_reason=finish_reason,
+                    )
+        except Exception as e:
+            logger.error("Cerebras streaming error: %s", e)
             raise
 
 
@@ -1616,7 +2205,7 @@ class OpenRouterService(OpenAICompatibleService):
         self.rate_limiter.wait_for_permit()
 
         payload: dict[str, Any] = {
-            "model": self._model_name,
+            "model": self.model_name,
             "messages": formatted_messages,
             "temperature": temperature,
         }
@@ -1689,8 +2278,8 @@ class OpenRouterService(OpenAICompatibleService):
                 f"{self._base_url}/chat/completions",
                 headers=self.headers,
                 json=payload,
-                timeout=120,
-                verify=False
+                timeout=90,
+                verify=_SSL_VERIFY
             )
             response.raise_for_status()
             return response.json()["choices"][0]["message"]["content"]
@@ -1702,10 +2291,10 @@ class OpenRouterService(OpenAICompatibleService):
                     error_detail = f": {error_body['error'].get('message', str(error_body['error']))}"
             except (ValueError, KeyError):
                 pass
-            print(f"OpenRouter API error{error_detail}: {e}")
+            logger.error("OpenRouter API error%s: %s", error_detail, e)
             raise
         except requests.exceptions.RequestException as e:
-            print(f"OpenRouter request failed: {e}")
+            logger.error("OpenRouter request failed: %s", e)
             raise
     
     @staticmethod
@@ -1749,7 +2338,8 @@ class OpenRouterService(OpenAICompatibleService):
         
         return OpenAI(
             base_url=self._base_url,
-            api_key=self._api_key
+            api_key=self._api_key,
+            timeout=90.0,
         )
     
     @property
@@ -1812,12 +2402,12 @@ class OpenRouterService(OpenAICompatibleService):
                 f"{self._base_url.replace('/v1', '')}/api/v1/key",
                 headers={"Authorization": f"Bearer {self._api_key}"},
                 timeout=30,
-                verify=False
+                verify=_SSL_VERIFY
             )
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
-            print(f"Failed to fetch OpenRouter API key info: {e}")
+            logger.warning("Failed to fetch OpenRouter API key info: %s", e)
             raise
     
     def get_rate_limit_status(self) -> RateLimitStatus:
@@ -1902,7 +2492,7 @@ class OpenRouterService(OpenAICompatibleService):
             )
         except Exception as e:
             # If API call fails, return base status with error info
-            print(f"Warning: Could not fetch OpenRouter API info: {e}")
+            logger.warning("Could not fetch OpenRouter API info: %s", e)
             return base_status
 
 
@@ -1943,7 +2533,7 @@ class GeminiService(GenerativeAIService):
         from google.genai import types
         self.genai = genai
         self.types = types
-        self.client = genai.Client(api_key=api_key)
+        self.client = genai.Client(api_key=api_key, http_options={"timeout": 90_000})
 
     def generate_completion(self, messages: list[dict[str, str]], 
                           temperature: float | str = 0.7,
@@ -2039,7 +2629,82 @@ class GeminiService(GenerativeAIService):
             )
             return response.text or ""
         except Exception as e:
-            print(f"An error occurred with the Gemini API: {e}")
+            logger.error("An error occurred with the Gemini API: %s", e)
+            raise
+
+    def generate_completion_stream(
+        self,
+        messages: list[dict[str, str]],
+        temperature: float | str = 0.7,
+        max_tokens: int | None = None,
+        top_p: float | None = None,
+        frequency_penalty: float | None = None,
+        presence_penalty: float | None = None,
+        stop: list[str] | None = None,
+        response_format: ResponseFormat = ResponseFormat.JSON,
+        json_schema: dict | None = None,
+        use_case: str | None = None,
+        **kwargs,
+    ) -> Iterator[str]:
+        """Stream tokens from Google Gemini using generate_content_stream.
+
+        Yields:
+            Text delta strings as they arrive.
+        """
+        temperature = self._resolve_temperature(temperature)
+        config_params: dict[str, Any] = {"temperature": temperature}
+        if max_tokens is not None:
+            config_params["max_output_tokens"] = max_tokens
+        if top_p is not None:
+            config_params["top_p"] = top_p
+        if stop is not None:
+            config_params["stop_sequences"] = stop
+        if "top_k" in kwargs:
+            config_params["top_k"] = kwargs["top_k"]
+
+        processed_messages_for_api: list[dict[str, str]] = []
+        system_instruction_content = ""
+        for msg in messages:
+            if msg.get("role") == "system":
+                system_instruction_content += msg.get("content", "") + "\n"
+            else:
+                processed_messages_for_api.append(msg.copy())
+        config_params["system_instruction"] = (
+            system_instruction_content.strip()
+            or "You are a helpful assistant."
+        )
+        if response_format == ResponseFormat.JSON and json_schema:
+            config_params["response_mime_type"] = "application/json"
+            config_params["response_schema"] = json_schema
+        elif response_format == ResponseFormat.JSON:
+            config_params["response_mime_type"] = "application/json"
+
+        self._validate_messages_length(processed_messages_for_api)
+        gemini_contents = []
+        for msg in processed_messages_for_api:
+            role = msg.get("role")
+            content = msg.get("content")
+            if role and content and role != "system":
+                mapped_role = "user" if role == "user" else "model"
+                gemini_contents.append(
+                    self.types.Content(
+                        role=mapped_role,
+                        parts=[self.types.Part.from_text(text=content)],
+                    )
+                )
+        self.rate_limiter.wait_for_permit()
+        try:
+            config = self.types.GenerateContentConfig(**config_params)
+            for chunk in self.client.models.generate_content_stream(
+                model=self.model_name,
+                contents=gemini_contents,
+                config=config,
+            ):
+                text = chunk.text
+                if text:
+                    yield text
+        except Exception as e:
+            logger.error("Gemini streaming error: %s", e)
             raise
 
 
@@ -2090,7 +2755,6 @@ class FoundryService(GenerativeAIService):
             try:
                 api_key = resolve_api_key_for_provider(self._PROVIDER_NAME)
             except (ValueError, KeyError):
-                import os
                 api_key = os.environ.get("GITHUB_TOKEN")
                 if not api_key:
                     raise ValueError(
@@ -2113,25 +2777,29 @@ class FoundryService(GenerativeAIService):
 
         # Lazy: SDK client created on first generate_completion call
         self.client = None
+        self._client_lock = threading.Lock()
 
     def _ensure_client(self) -> None:
         """Lazy initialization of the Azure AI Inference client."""
         if self.client is not None:
             return
-        
-        if not install_library("azure.ai.inference", package_name="azure-ai-inference"):
-            raise ImportError(
-                "The 'azure-ai-inference' library is required for FoundryService "
-                "and could not be installed."
+        with self._client_lock:
+            if self.client is not None:
+                return
+            
+            if not install_library("azure.ai.inference", package_name="azure-ai-inference"):
+                raise ImportError(
+                    "The 'azure-ai-inference' library is required for FoundryService "
+                    "and could not be installed."
+                )
+
+            from azure.ai.inference import ChatCompletionsClient
+            from azure.core.credentials import AzureKeyCredential
+
+            self.client = ChatCompletionsClient(
+                endpoint=self._endpoint,
+                credential=AzureKeyCredential(self._api_key),
             )
-        
-        from azure.ai.inference import ChatCompletionsClient
-        from azure.core.credentials import AzureKeyCredential
-        
-        self.client = ChatCompletionsClient(
-            endpoint=self._endpoint,
-            credential=AzureKeyCredential(self._api_key),
-        )
 
     @property
     def endpoint(self) -> str:
@@ -2244,7 +2912,7 @@ class FoundryService(GenerativeAIService):
                 return content[len("```json"): -len("```")].strip()
             return content
         except Exception as e:
-            print(f"Error with Foundry Models API: {e}")
+            logger.error("Error with Foundry Models API: %s", e)
             raise
 
 
@@ -2324,31 +2992,35 @@ class VercelAIService(GenerativeAIService):
 
         # Lazy: SDK model created on first generate_completion call
         self._sdk_model = None
+        self._sdk_lock = threading.Lock()
 
     def _ensure_model(self) -> None:
         """Lazy initialization of the Vercel AI SDK model."""
         if self._sdk_model is not None:
             return
+        with self._sdk_lock:
+            if self._sdk_model is not None:
+                return
         
-        if not install_library("ai_sdk", package_name="ai-sdk-python"):
-            raise ImportError(
-                "The 'ai-sdk-python' library is required for VercelAIService "
-                "and could not be installed."
-            )
+            if not install_library("ai_sdk", package_name="ai-sdk-python"):
+                raise ImportError(
+                    "The 'ai-sdk-python' library is required for VercelAIService "
+                    "and could not be installed."
+                )
         
-        import ai_sdk
+            import ai_sdk
         
-        factory_kwargs: dict[str, Any] = {}
-        if self._api_key:
-            factory_kwargs["api_key"] = self._api_key
-        factory_kwargs.update(self._model_kwargs)
+            factory_kwargs: dict[str, Any] = {}
+            if self._api_key:
+                factory_kwargs["api_key"] = self._api_key
+            factory_kwargs.update(self._model_kwargs)
         
-        if self._sdk_provider_name == "openai":
-            self._sdk_model = ai_sdk.openai(self.model_name, **factory_kwargs)
-        elif self._sdk_provider_name == "anthropic":
-            self._sdk_model = ai_sdk.anthropic(self.model_name, **factory_kwargs)
-        elif self._sdk_provider_name == "gemini":
-            self._sdk_model = ai_sdk.gemini(self.model_name, **factory_kwargs)
+            if self._sdk_provider_name == "openai":
+                self._sdk_model = ai_sdk.openai(self.model_name, **factory_kwargs)
+            elif self._sdk_provider_name == "anthropic":
+                self._sdk_model = ai_sdk.anthropic(self.model_name, **factory_kwargs)
+            elif self._sdk_provider_name == "gemini":
+                self._sdk_model = ai_sdk.gemini(self.model_name, **factory_kwargs)
 
     @property
     def sdk_provider(self) -> str:
@@ -2458,7 +3130,361 @@ class VercelAIService(GenerativeAIService):
                 return content[len("```json"): -len("```")].strip()
             return content
         except Exception as e:
-            print(f"Error with Vercel AI SDK ({self._sdk_provider_name}): {e}")
+            logger.error("Error with Vercel AI SDK (%s): %s", self._sdk_provider_name, e)
+            raise
+
+
+class AnthropicService(GenerativeAIService):
+    """
+    Anthropic Claude AI service — native SDK connector.
+
+    Uses the official ``anthropic`` Python SDK to access Claude models.
+    Anthropic's API differs from OpenAI-compatible endpoints: the system
+    prompt is a top-level parameter (not a message role), and the response
+    structure uses ``content`` blocks instead of ``choices``.
+
+    Supported models (as of 2026):
+        - claude-opus-4: Claude Opus 4 (200K context, most capable)
+        - claude-sonnet-4: Claude Sonnet 4 (200K context, balanced)
+        - claude-haiku-4: Claude Haiku 4 (200K context, fast & affordable)
+        - claude-3.5-sonnet: Claude 3.5 Sonnet (200K context)
+        - claude-3.5-haiku: Claude 3.5 Haiku (200K context, lightweight)
+
+    Rate Limits (default tier):
+        - 50 RPM, 40K TPM (varies by plan)
+        - See model_rate_limits.csv for detailed limits per model
+
+    API Documentation: https://docs.anthropic.com/en/api
+
+    Usage:
+        >>> from connector_genai import AnthropicService
+        >>> client = AnthropicService(model_name="claude-sonnet-4", api_key="sk-ant-...")
+        >>> response = client.generate_completion(
+        ...     messages=[{"role": "user", "content": "Hello!"}]
+        ... )
+    """
+
+    _PROVIDER_NAME = "anthropic"
+
+    def __init__(self, model_name: str,
+                 api_key: str | None = None,
+                 rate_limit_config: Optional[RateLimitConfig] = None):
+        """
+        Initialize Anthropic Claude service.
+
+        Args:
+            model_name: Model to use (e.g., 'claude-sonnet-4')
+            api_key: Anthropic API key (get from console.anthropic.com)
+            rate_limit_config: Rate limit configuration (loaded from CSV if None)
+        """
+        if api_key is None:
+            api_key = resolve_api_key_for_provider(self._PROVIDER_NAME)
+
+        if rate_limit_config is None:
+            rate_limit_config = get_rate_limit_config(self._PROVIDER_NAME, model_name)
+
+        super().__init__(
+            model_name,
+            get_prompt_size(self._PROVIDER_NAME, model_name),
+            api_key,
+            rate_limit_config,
+        )
+
+        # Lazy: SDK client created on first call
+        self.client = None
+        self._client_lock = threading.Lock()
+
+    def _ensure_client(self) -> None:
+        """Lazy initialization of the Anthropic SDK client."""
+        if self.client is not None:
+            return
+        with self._client_lock:
+            if self.client is not None:
+                return
+
+            if not install_library("anthropic"):
+                raise ImportError(
+                    "The 'anthropic' library is required for AnthropicService "
+                    "and could not be installed. Run: pip install anthropic"
+                )
+
+            import anthropic
+            self.client = anthropic.Anthropic(api_key=self._api_key)
+
+    @staticmethod
+    def _split_system_and_messages(
+        messages: list[dict[str, str]],
+    ) -> tuple[str | None, list[dict[str, str]]]:
+        """Separate system messages from conversation messages.
+
+        Anthropic requires the system prompt as a top-level parameter
+        rather than a message with ``role='system'``.
+
+        Args:
+            messages: Chat messages in OpenAI format.
+
+        Returns:
+            Tuple of (system_prompt, filtered_messages).
+        """
+        system_parts: list[str] = []
+        filtered: list[str] = []
+        for msg in messages:
+            if msg.get("role") == "system":
+                system_parts.append(msg.get("content", ""))
+            else:
+                role = msg.get("role", "user")
+                # Map 'model' role (Gemini convention) to 'assistant'
+                if role == "model":
+                    role = "assistant"
+                filtered.append({"role": role, "content": msg.get("content", "")})
+
+        system_prompt = "\n\n".join(system_parts) if system_parts else None
+        return system_prompt, filtered
+
+    def generate_completion(self, messages: list[dict[str, str]],
+                          temperature: float | str = 0.7,
+                          max_tokens: int | None = None,
+                          top_p: float | None = None,
+                          frequency_penalty: float | None = None,
+                          presence_penalty: float | None = None,
+                          stop: list[str] | None = None,
+                          response_format: ResponseFormat = ResponseFormat.JSON,
+                          json_schema: dict | None = None,
+                          use_case: str | None = None,
+                          **kwargs) -> str:
+        """
+        Generate a completion using the Anthropic SDK.
+
+        Args:
+            messages: List of message dictionaries with 'role' and 'content'
+            temperature: Temperature value or use case name (e.g., 'coding', 'creative')
+            max_tokens: Maximum number of completion tokens (default: 4096)
+            top_p: Top-p sampling parameter
+            frequency_penalty: Not supported by Anthropic, ignored
+            presence_penalty: Not supported by Anthropic, ignored
+            stop: Stop sequences
+            response_format: ResponseFormat.JSON or ResponseFormat.TEXT
+            json_schema: JSON schema for structured output
+            use_case: Use case name for automatic temperature selection
+
+        Returns:
+            Generated text response
+        """
+        self._ensure_client()
+        temperature = self._resolve_temperature(temperature)
+
+        formatted_messages = self._format_messages_for_response(
+            messages, response_format, json_schema,
+        )
+
+        if not any(msg.get("role") == "system" for msg in formatted_messages):
+            formatted_messages.insert(
+                0, {"role": "system", "content": "You are a helpful assistant."},
+            )
+
+        self._validate_messages_length(formatted_messages)
+        self.rate_limiter.wait_for_permit()
+
+        system_prompt, api_messages = self._split_system_and_messages(formatted_messages)
+
+        sdk_params: dict[str, Any] = {
+            "model": self.model_name,
+            "messages": api_messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens or 4096,
+        }
+
+        if system_prompt:
+            sdk_params["system"] = system_prompt
+        if top_p is not None:
+            sdk_params["top_p"] = top_p
+        if stop is not None:
+            sdk_params["stop_sequences"] = stop
+
+        # Forward tool definitions if provided
+        tools = kwargs.get("tools")
+        if tools:
+            sdk_params["tools"] = tools
+
+        try:
+            response = self.client.messages.create(**sdk_params)
+            # Extract text from content blocks
+            text_parts: list[str] = []
+            for block in response.content:
+                if block.type == "text":
+                    text_parts.append(block.text)
+            content = "\n".join(text_parts).strip()
+
+            # Strip markdown code fences if present
+            if content.startswith("```json") and content.endswith("```"):
+                return content[len("```json"): -len("```")].strip()
+            return content
+        except Exception as e:
+            logger.error("Error with Anthropic API: %s", e)
+            raise
+
+    def generate_completion_stream(
+        self,
+        messages: list[dict[str, str]],
+        temperature: float | str = 0.7,
+        max_tokens: int | None = None,
+        top_p: float | None = None,
+        frequency_penalty: float | None = None,
+        presence_penalty: float | None = None,
+        stop: list[str] | None = None,
+        response_format: ResponseFormat = ResponseFormat.JSON,
+        json_schema: dict | None = None,
+        use_case: str | None = None,
+        **kwargs,
+    ) -> Iterator[str]:
+        """Stream tokens from Anthropic Claude via native SDK streaming.
+
+        Yields:
+            Text delta strings as they arrive.
+        """
+        self._ensure_client()
+        temperature = self._resolve_temperature(temperature)
+        formatted_messages = self._format_messages_for_response(
+            messages, response_format, json_schema,
+        )
+        if not any(msg.get("role") == "system" for msg in formatted_messages):
+            formatted_messages.insert(
+                0, {"role": "system", "content": "You are a helpful assistant."},
+            )
+        self._validate_messages_length(formatted_messages)
+        self.rate_limiter.wait_for_permit()
+
+        system_prompt, api_messages = self._split_system_and_messages(formatted_messages)
+
+        sdk_params: dict[str, Any] = {
+            "model": self.model_name,
+            "messages": api_messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens or 4096,
+        }
+        if system_prompt:
+            sdk_params["system"] = system_prompt
+        if top_p is not None:
+            sdk_params["top_p"] = top_p
+        if stop is not None:
+            sdk_params["stop_sequences"] = stop
+
+        try:
+            with self.client.messages.stream(**sdk_params) as stream:
+                for text in stream.text_stream:
+                    yield text
+        except Exception as e:
+            logger.error("Anthropic streaming error: %s", e)
+            raise
+
+    def generate_stream(
+        self,
+        messages: list[dict[str, str]],
+        temperature: float | str = 0.7,
+        max_tokens: int | None = None,
+        top_p: float | None = None,
+        frequency_penalty: float | None = None,
+        presence_penalty: float | None = None,
+        stop: list[str] | None = None,
+        response_format: ResponseFormat = ResponseFormat.JSON,
+        json_schema: dict | None = None,
+        use_case: str | None = None,
+        **kwargs,
+    ) -> Iterator[StreamChunk]:
+        """Stream structured chunks from Anthropic Claude via native SDK.
+
+        Parses text content deltas and tool-use input deltas from the
+        Anthropic streaming event types.
+
+        Yields:
+            ``StreamChunk`` objects for text, tool-call, and finish signals.
+        """
+        self._ensure_client()
+        temperature = self._resolve_temperature(temperature)
+        formatted_messages = self._format_messages_for_response(
+            messages, response_format, json_schema,
+        )
+        if not any(msg.get("role") == "system" for msg in formatted_messages):
+            formatted_messages.insert(
+                0, {"role": "system", "content": "You are a helpful assistant."},
+            )
+        self._validate_messages_length(formatted_messages)
+        self.rate_limiter.wait_for_permit()
+
+        system_prompt, api_messages = self._split_system_and_messages(formatted_messages)
+
+        sdk_params: dict[str, Any] = {
+            "model": self.model_name,
+            "messages": api_messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens or 4096,
+        }
+        if system_prompt:
+            sdk_params["system"] = system_prompt
+        if top_p is not None:
+            sdk_params["top_p"] = top_p
+        if stop is not None:
+            sdk_params["stop_sequences"] = stop
+
+        # Forward tools if provided
+        tools = kwargs.get("tools")
+        if tools:
+            sdk_params["tools"] = tools
+
+        # Track tool-use blocks for incremental argument streaming
+        _current_tool_id: str = ""
+        _current_tool_name: str = ""
+        _tool_index: int = 0
+
+        try:
+            with self.client.messages.stream(**sdk_params) as stream:
+                for event in stream:
+                    etype = getattr(event, "type", "")
+
+                    if etype == "content_block_start":
+                        block = getattr(event, "content_block", None)
+                        if block and getattr(block, "type", "") == "tool_use":
+                            _current_tool_id = getattr(block, "id", "")
+                            _current_tool_name = getattr(block, "name", "")
+
+                    elif etype == "content_block_delta":
+                        delta = getattr(event, "delta", None)
+                        if delta is None:
+                            continue
+                        delta_type = getattr(delta, "type", "")
+
+                        if delta_type == "text_delta":
+                            text = getattr(delta, "text", "")
+                            if text:
+                                yield StreamChunk(type="text", content=text)
+
+                        elif delta_type == "input_json_delta":
+                            partial = getattr(delta, "partial_json", "")
+                            if partial:
+                                yield StreamChunk(
+                                    type="tool_call",
+                                    tool_index=_tool_index,
+                                    tool_call_id=_current_tool_id,
+                                    tool_name=_current_tool_name,
+                                    content=partial,
+                                )
+
+                    elif etype == "content_block_stop":
+                        if _current_tool_id:
+                            _tool_index += 1
+                            _current_tool_id = ""
+                            _current_tool_name = ""
+
+                    elif etype == "message_stop":
+                        stop_reason = "stop"
+                        msg = getattr(event, "message", None)
+                        if msg:
+                            stop_reason = getattr(msg, "stop_reason", "stop") or "stop"
+                        yield StreamChunk(type="finish", finish_reason=stop_reason)
+
+            # Ensure finish chunk is always emitted
+        except Exception as e:
+            logger.error("Anthropic streaming error: %s", e)
             raise
 
 
@@ -2522,15 +3548,84 @@ class OllamaService(GenerativeAIService):
             "options": options
         }
         try:
-            response = HTTP_SESSION.post(endpoint, json=payload, timeout=180, verify=False)
+            response = HTTP_SESSION.post(endpoint, json=payload, timeout=180, verify=_SSL_VERIFY)
             response.raise_for_status()
             data = response.json()
             return data.get("message", {}).get("content", "").strip()
         except requests.exceptions.RequestException as e:
-            print(f"Error connecting to Ollama at {self._host}. Is it running? Error: {e}")
+            logger.error("Error connecting to Ollama at %s. Is it running? Error: %s", self._host, e)
             raise
         except KeyError as e:
-            print(f"Unexpected response format from Ollama: {e}")
+            logger.error("Unexpected response format from Ollama: %s", e)
+            raise
+
+    def generate_completion_stream(
+        self,
+        messages: list[dict[str, str]],
+        temperature: float | str = 0.7,
+        max_tokens: int | None = None,
+        top_p: float | None = None,
+        frequency_penalty: float | None = None,
+        presence_penalty: float | None = None,
+        stop: list[str] | None = None,
+        response_format: ResponseFormat = ResponseFormat.JSON,
+        json_schema: dict | None = None,
+        use_case: str | None = None,
+        **kwargs,
+    ) -> Iterator[str]:
+        """Stream tokens from a local Ollama model.
+
+        Ollama streams NDJSON (one JSON object per line) when
+        ``stream=True``.
+
+        Yields:
+            Text delta strings as they arrive.
+        """
+        temperature = self._resolve_temperature(temperature)
+        formatted_messages = self._format_messages_for_response(
+            messages, response_format, json_schema,
+        )
+        self._validate_messages_length(formatted_messages)
+        self.rate_limiter.wait_for_permit()
+
+        endpoint = f"{self._host}/api/chat"
+        options: dict[str, Any] = {"temperature": temperature}
+        if max_tokens is not None:
+            options["num_predict"] = max_tokens
+        if top_p is not None:
+            options["top_p"] = top_p
+        if stop is not None:
+            options["stop"] = stop
+        if frequency_penalty is not None:
+            options["repeat_penalty"] = frequency_penalty
+        for k in ("top_k", "seed", "num_ctx"):
+            if k in kwargs:
+                options[k] = kwargs[k]
+
+        payload = {
+            "model": self.model_name,
+            "messages": formatted_messages,
+            "stream": True,
+            "options": options,
+        }
+        try:
+            with HTTP_SESSION.post(
+                endpoint, json=payload, timeout=180,
+                verify=_SSL_VERIFY, stream=True,
+            ) as resp:
+                resp.raise_for_status()
+                for raw_line in resp.iter_lines(decode_unicode=True):
+                    if not raw_line:
+                        continue
+                    try:
+                        chunk = json.loads(raw_line)
+                        content = chunk.get("message", {}).get("content", "")
+                        if content:
+                            yield content
+                    except json.JSONDecodeError:
+                        continue
+        except requests.exceptions.RequestException as e:
+            logger.error("Ollama streaming error at %s: %s", self._host, e)
             raise
 
 
@@ -2557,7 +3652,6 @@ def load_api_keys_from_csv(csv_path: str | None = None) -> dict[str, dict[str, s
     providers: dict[str, dict[str, str]] = {}
     
     with open(csv_path, 'r', encoding='utf-8') as f:
-        import csv
         reader = csv.DictReader(f, delimiter='\t')
         for row in reader:
             provider = row.get('provider', '').lower()
@@ -2660,6 +3754,8 @@ def get_service_for_provider(
         return GrokService(model_name=model, api_key=apikey, rate_limit_config=rate_limit_config)
     elif provider_lower == 'cerebras':
         return CerebrasService(model_name=model, api_key=apikey, rate_limit_config=rate_limit_config)
+    elif provider_lower == 'anthropic':
+        return AnthropicService(model_name=model, api_key=apikey, rate_limit_config=rate_limit_config)
     elif provider_lower == 'nvidia':
         return NvidiaService(model_name=model, api_key=apikey, rate_limit_config=rate_limit_config)
     elif provider_lower == 'foundry':
@@ -2692,9 +3788,6 @@ def resolve_api_key_for_provider(provider: str) -> str:
         >>> print(key[:10])
         'sk-or-v1-...'
     """
-    import logging
-    logger = logging.getLogger("connector_genai")
-    
     provider_lower = provider.lower()
     
     # Ollama no requiere API key
@@ -2712,10 +3805,10 @@ def resolve_api_key_for_provider(provider: str) -> str:
             import keyring
             key = keyring.get_password(provider_lower, "api_key")
             if key:
-                logger.info(f"API key loaded from keyring for '{provider_lower}'")
+                logger.info("API key loaded from keyring for %r", provider_lower)
                 return key
     except Exception as e:
-        logger.debug(f"Keyring lookup failed for '{provider_lower}': {e}")
+        logger.debug("Keyring lookup failed for %r: %s", provider_lower, e)
     
     # 2. Try CSV file (apikeys.csv)
     try:
@@ -2723,10 +3816,10 @@ def resolve_api_key_for_provider(provider: str) -> str:
         if provider_lower in api_keys:
             key = api_keys[provider_lower].get('apikey')
             if key:
-                logger.info(f"API key loaded from CSV for '{provider_lower}'")
+                logger.info("API key loaded from CSV for %r", provider_lower)
                 return key
     except Exception as e:
-        logger.debug(f"Could not load API keys from CSV: {e}")
+        logger.debug("Could not load API keys from CSV: %s", e)
     
     raise ValueError(f"API key not found for provider '{provider_lower}'. "
                      f"Please add it to keyring or apikeys.csv")
@@ -2750,7 +3843,6 @@ def load_all_api_keys_from_csv(csv_path: str | None = None) -> list[dict[str, st
     entries: list[dict[str, str]] = []
     
     with open(csv_path, 'r', encoding='utf-8') as f:
-        import csv
         reader = csv.DictReader(f, delimiter='\t')
         for row in reader:
             provider = row.get('provider', '').lower()
@@ -2774,7 +3866,12 @@ def interactive_select(options: list[str], prompt: str) -> int:
     
     Returns:
         Index of selected option (0-based)
+    
+    Raises:
+        RuntimeError: If stdin is not a terminal (non-interactive context).
     """
+    if not sys.stdin.isatty():
+        raise RuntimeError("interactive_select requires an interactive terminal")
     print(f"\n{prompt}")
     for i, option in enumerate(options, 1):
         print(f"  [{i}] {option}")
