@@ -174,11 +174,7 @@ cython_debug/
 .abstra/
 
 # Visual Studio Code
-#  Visual Studio Code specific template is maintained in a separate VisualStudioCode.gitignore 
-#  that can be found at https://github.com/github/gitignore/blob/main/Global/VisualStudioCode.gitignore
-#  and can be added to the global gitignore or merged into this file. However, if you prefer, 
-#  you could uncomment the following to ignore the enitre vscode folder
-# .vscode/
+.vscode/
 
 # Ruff stuff:
 .ruff_cache/
@@ -193,22 +189,32 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 
-# Excluir directorios de proyecto, tests y documentación
-.github/
-.vscode/
+# ── .github: only GitHub-essential files ─────────────────────────────
+.github/*
+!.github/workflows/
+!.github/ISSUE_TEMPLATE/
+!.github/PULL_REQUEST_TEMPLATE.md
+!.github/copilot-instructions.md
+
+# ── Project internals (not published) ───────────────────────────────
 project_structure.txt
-pyproject.toml
-tests/
-docs/
-examples/
 notebooks/
 ToDo/
 
+# Test output files (root-level)
+test_*.txt
+_fix_encoding.py
+
 # API Keys and Secrets (any subdirectory)
-**/*key*.txt
-**/*key*.csv
-**/*key*.json
-**/*key*.cfg
+**/apikey*
+**/*_key.txt
+**/*_key.csv
+**/*_key.json
+**/*_key.cfg
+**/*_keys.txt
+**/*_keys.csv
+**/*_keys.json
+**/*_keys.cfg
 **/*secret*.txt
 **/*secret*.csv
 **/*secret*.json

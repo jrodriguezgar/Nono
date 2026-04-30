@@ -1,0 +1,27 @@
+# Nono Docker ignore — keep image lean
+__pycache__/
+*.pyc
+*.pyo
+.git/
+.github/
+.venv/
+venv/
+tests/
+ToDo/
+*.egg-info/
+dist/
+build/
+*.md
+!nono/**/*.md
+*.txt
+!nono/**/*.txt
+.env
+.env.*
+Dockerfile
+docker-compose.yml
+install_log.txt
+test_output.txt
+test_results.txt
+connection_test_output.txt
+vercel_test_output.txt
+LICENSE
